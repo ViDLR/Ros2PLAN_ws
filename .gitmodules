@@ -1,0 +1,3 @@
+[submodule "src/ros2_planning_system"]
+	path = src/ros2_planning_system
+	url = https://github.com/ViDLR/ros2_planning_system.git
