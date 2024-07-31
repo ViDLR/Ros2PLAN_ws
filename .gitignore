@@ -1,8 +1,0 @@
-build/
-install/
-log/
-.vscode/
-.idea/
-*.swp
-.DS_Store
-src/ros2_planning_system
