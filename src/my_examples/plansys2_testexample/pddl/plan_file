@@ -1,0 +1,8 @@
+0.000: (move robot2 kitchen dinning)  [5.000]
+0.000: (askcharge robot1 entrance chargingroom)  [5.000]
+5.001: (move robot2 dinning entrance)  [5.000]
+5.001: (charge robot1 chargingroom)  [5.000]
+10.002: (move robot1 chargingroom kitchen)  [5.000]
+15.003: (move robot1 kitchen dinning)  [5.000]
+20.004: (move robot1 dinning bedroom)  [5.000]
+25.005: (move robot1 bedroom bathroom)  [5.000]
