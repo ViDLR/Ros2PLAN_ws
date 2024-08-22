@@ -26,7 +26,7 @@ public:
   }
 
 private:
-  void do_work()
+  void do_work() override
   {
     if (!action_in_progress_) {
       action_simulator::msg::ActionExecutionInfo msg;
@@ -61,9 +61,25 @@ private:
 
   bool action_in_progress_;
   std::string current_action_id_;
-  std::string robot_id_;  // Declare robot_id as a member variable
+  std::string robot_id_;
+  std::vector<std::string> specialized_arguments_;
   rclcpp::Publisher<action_simulator::msg::ActionExecutionInfo>::SharedPtr publisher_;
   rclcpp::Subscription<action_simulator::msg::ActionExecutionInfo>::SharedPtr subscription_;
+
+  CallbackReturn on_deactivate(const rclcpp_lifecycle::State & state) override
+  {
+    if (action_in_progress_) {
+      action_simulator::msg::ActionExecutionInfo msg;
+      msg.robot_id = robot_id_;
+      msg.action_id = current_action_id_;
+      msg.action_name = "askcharge";
+      msg.progress = -1.0;  // Indicate cancellation
+      publisher_->publish(msg);
+      action_in_progress_ = false;
+      RCLCPP_INFO(this->get_logger(), "Action askcharge with ID: %s and robot ID: %s cancelled", current_action_id_.c_str(), robot_id_.c_str());
+    }
+    return ActionExecutorClient::on_deactivate(state);
+  }
 };
 
 int main(int argc, char **argv)

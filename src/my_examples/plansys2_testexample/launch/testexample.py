@@ -1,9 +1,7 @@
 import os
-
 from ament_index_python.packages import get_package_share_directory
-
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
+from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, TimerAction, ExecuteProcess
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
@@ -26,20 +24,12 @@ def generate_launch_description():
             'plansys2_bringup_launch_monolithic.py')),
         launch_arguments={
           'model_file': example_dir + '/pddl/test_domain.pddl',
-        #   'problem_file': example_dir + '/pddl/test_problem.pddl',
           'namespace': LaunchConfiguration('plansys2_namespace')
           }.items())
     
     # Robot-specific configurations, but without separate namespaces for actions
     robots = ['robot1', 'robot2']
     robot_actions = []
-    
-    manager_cmd = Node(
-            package='action_simulator',
-            executable='manager_node',
-            name='manager_node',
-            output='screen',
-            parameters=[{'robots_ids': robots}])
 
     for robot in robots:
         move_cmd = Node(
@@ -77,16 +67,33 @@ def generate_launch_description():
             simulator_cmd
         ])
 
+    # Create delayed actions for manager and UI nodes using ExecuteProcess
+    delayed_manager_cmd = TimerAction(
+        period=5.0,  # Increase delay to ensure complete initialization
+        actions=[ExecuteProcess(
+            cmd=['ros2', 'run', 'action_simulator', 'manager_node'],
+            output='screen'
+        )]
+    )
+
+    delayed_user_visualization_cmd = TimerAction(
+        period=3.0,  # Increase delay to ensure complete initialization
+        actions=[ExecuteProcess(
+            cmd=['ros2', 'run', 'user_visualization_interface', 'uservisualization_node'],
+            output='screen'
+        )]
+    )
+
     # Create the launch description and populate
     ld = LaunchDescription()
 
     ld.add_action(declare_plansys2_namespace_cmd)
     ld.add_action(plansys2_cmd)
-    ld.add_action(manager_cmd)
 
     for action in robot_actions:
         ld.add_action(action)
 
+    ld.add_action(delayed_manager_cmd)
+    # ld.add_action(delayed_user_visualization_cmd)
+
     return ld
-
-

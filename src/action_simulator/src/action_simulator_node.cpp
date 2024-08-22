@@ -1,5 +1,5 @@
 #include "rclcpp/rclcpp.hpp"
-#include "action_simulator/msg/action_execution_info.hpp" // Include your custom message
+#include "action_simulator/msg/action_execution_info.hpp"
 #include <chrono>
 #include <random>
 
@@ -32,6 +32,12 @@ public:
 private:
     void action_callback(const action_simulator::msg::ActionExecutionInfo::SharedPtr msg)
     {
+        if (msg->progress == -1.0) {
+            RCLCPP_INFO(this->get_logger(), "Received cancellation for action: %s", msg->action_name.c_str());
+            action_active_ = false;
+            return;
+        }
+
         if (!action_active_ || msg->action_name != current_action_) {
             RCLCPP_INFO(this->get_logger(), "Received new action simulation request: %s", msg->action_name.c_str());
 
@@ -40,7 +46,8 @@ private:
             action_active_ = true;
             current_progress_ = 0.0;
             current_action_id_ = msg->action_id;
-            failure_ = (dist_(gen_) < 0.01);  // 1% chance of failure
+            failure_ = (dist_(gen_) < 0.10);  // 10% chance of failure
+            RCLCPP_INFO(this->get_logger(), "Action failure or not: %d", failure_);
         } else {
             RCLCPP_INFO(this->get_logger(), "Action already in progress: %s", current_action_.c_str());
         }
@@ -77,7 +84,7 @@ private:
 
     std::string current_action_;
     std::string current_action_id_;
-    std::string robot_id_;  // Declare robot_id as a member variable
+    std::string robot_id_;
     double current_progress_;
     bool action_active_;
     bool failure_;

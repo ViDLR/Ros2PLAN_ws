@@ -29,8 +29,8 @@ def generate_launch_description():
     # Specify the actions
     simulator_cmd = Node(
         package='action_simulator',
-        executable='action_simulator_node',
-        name='simulator',
+        executable='manager_node',
+        name='manager',
         namespace=namespace,
         output='screen',
         parameters=[])
