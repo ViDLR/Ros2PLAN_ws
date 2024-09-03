@@ -16,7 +16,7 @@ class ManagerNode : public rclcpp::Node
 {
 public:
   ManagerNode()
-  : rclcpp::Node("manager_node")
+  : rclcpp::Node("manager_node"), saved_actions()
   {
   }
 
@@ -30,13 +30,13 @@ public:
 
     // Initialize problem expert with instances and predicates
     setup_knowledge("src/my_examples/plansys2_testexample/config/initial_setup.txt");
-
+    
     // Subscribe to the actions_hub topic to check the failure
     actions_hub_sub_ = this->create_subscription<plansys2_msgs::msg::ActionExecution>(
       "/actions_hub", 10, std::bind(&ManagerNode::actions_hub_callback, this, std::placeholders::_1));
-    
-    knowledge_sub_ = this->create_subscription<plansys2_msgs::msg::Knowledge>(
-    "knowledge_updates", 10, std::bind(&ManagerNode::knowledge_callback, this, std::placeholders::_1));
+
+    action_execution_info_sub_ = this->create_subscription<plansys2_msgs::msg::ActionExecutionInfo>(
+      "/action_execution_info", 10, std::bind(&ManagerNode::action_execution_info_callback, this, std::placeholders::_1));
 
     // Save initial state to make sure we can reload upon destruction by action failure
     save_current_knowledge_to_file("src/my_examples/plansys2_testexample/config/new_state.txt");
@@ -93,6 +93,12 @@ private:
     file.close();
 
     RCLCPP_INFO(this->get_logger(), "Knowledge loaded successfully from %s", file_path.c_str());
+
+    std::vector<std::string> robot_names = {"robot1", "robot2"};  // Add more robot names as needed
+    if (!problem_expert_client_->subscribe_to_knowledge_topics(robot_names)) {
+      RCLCPP_ERROR(this->get_logger(), "Failed to subscribe to knowledge topics.");
+      return;
+    }
   }
   
   void start_plan_execution()
@@ -118,52 +124,6 @@ private:
     }
   }
 
-  void knowledge_callback(const plansys2_msgs::msg::Knowledge::SharedPtr msg)
-  {
-    // Clear previous knowledge
-    last_good_instances_.clear();
-    last_good_predicates_.clear();
-    last_good_functions_.clear();
-
-    // Parse instances
-    for (const auto &instance_str : msg->instances)
-    {
-        auto delimiter_pos = instance_str.find(':');
-        if (delimiter_pos != std::string::npos)
-        {
-            std::string instance_name = instance_str.substr(0, delimiter_pos);
-            std::string instance_type = instance_str.substr(delimiter_pos + 1);
-            last_good_instances_.emplace_back(instance_name, instance_type);
-        }
-        else
-        {
-            RCLCPP_WARN(this->get_logger(), "Invalid instance format: %s", instance_str.c_str());
-        }
-    }
-
-    // Store predicates as strings (since we may only have string representations)
-    for (const auto &predicate_str : msg->predicates)
-    {
-        last_good_predicates_.emplace_back(predicate_str);
-    }
-
-    // Store functions as strings (since we may only have string representations)
-    for (const auto &function_str : msg->functions)
-    {
-        last_good_functions_.emplace_back(function_str);
-    }
-
-    // Log the received goal
-    RCLCPP_INFO(this->get_logger(), "Updated current goal: %s", msg->goal.c_str());
-
-    // Optionally store the goal in a class member variable for later use
-    // current_goal_ = msg->goal; // Uncomment if current_goal_ is needed for later processing
-
-    RCLCPP_INFO(this->get_logger(), "Updated manager node with the latest knowledge");
-    save_current_knowledge_to_file("src/my_examples/plansys2_testexample/config/new_state.txt");
-  }
-
-
   void actions_hub_callback(const plansys2_msgs::msg::ActionExecution::SharedPtr msg)
   {
   std::string status = msg->status;
@@ -182,102 +142,23 @@ private:
   }
   }
 
-  void print_knowledge_changes()
+
+  void action_execution_info_callback(const plansys2_msgs::msg::ActionExecutionInfo::SharedPtr msg)
   {
-    auto current_instances = problem_expert_client_->getInstances();
-    auto current_predicates = problem_expert_client_->getPredicates();
-    auto current_functions = problem_expert_client_->getFunctions();
+    // RCLCPP_INFO(this->get_logger(), "Action %s status: %d", msg->action_full_name.c_str(), msg->status);
 
-    // Log all current knowledge
-    RCLCPP_INFO(this->get_logger(), "Current Instances:");
-    for (const auto &instance : current_instances)
+    if (msg->status == plansys2_msgs::msg::ActionExecutionInfo::FAILED)
     {
-        RCLCPP_INFO(this->get_logger(), "  - %s: %s", instance.name.c_str(), instance.type.c_str());
+        RCLCPP_WARN(this->get_logger(), "Action %s has failed! Replanning will be triggered.", msg->action_full_name.c_str());
+        reload_knowledge_and_replan();
     }
-
-    RCLCPP_INFO(this->get_logger(), "Current Predicates:");
-    for (const auto &predicate : current_predicates)
+    else if (msg->status == plansys2_msgs::msg::ActionExecutionInfo::SUCCEEDED && saved_actions.find(msg->action_full_name) == saved_actions.end())
     {
-        RCLCPP_INFO(this->get_logger(), "  - %s", parser::pddl::toString(predicate).c_str());
-    }
-
-    RCLCPP_INFO(this->get_logger(), "Current Functions:");
-    for (const auto &function : current_functions)
-    {
-        RCLCPP_INFO(this->get_logger(), "  - %s", parser::pddl::toString(function).c_str());
-    }
-
-    // Compare instances
-    for (const auto &instance : current_instances)
-    {
-        auto it = std::find_if(last_good_instances_.begin(), last_good_instances_.end(),
-                               [&instance](const plansys2::Instance &i) { return i.name == instance.name && i.type == instance.type; });
-        if (it == last_good_instances_.end())
-        {
-            RCLCPP_INFO(this->get_logger(), "New instance added: %s of type %s", instance.name.c_str(), instance.type.c_str());
-        }
-    }
-
-    for (const auto &instance : last_good_instances_)
-    {
-        auto it = std::find_if(current_instances.begin(), current_instances.end(),
-                               [&instance](const plansys2::Instance &i) { return i.name == instance.name && i.type == instance.type; });
-        if (it == current_instances.end())
-        {
-            RCLCPP_INFO(this->get_logger(), "Instance removed: %s of type %s", instance.name.c_str(), instance.type.c_str());
-        }
-    }
-
-    // Compare predicates
-    for (const auto &predicate : current_predicates)
-    {
-        auto it = std::find_if(last_good_predicates_.begin(), last_good_predicates_.end(),
-                               [&predicate](const plansys2::Predicate &p) { return parser::pddl::toString(p) == parser::pddl::toString(predicate); });
-        if (it == last_good_predicates_.end())
-        {
-            RCLCPP_INFO(this->get_logger(), "New predicate added: %s", parser::pddl::toString(predicate).c_str());
-        }
-    }
-
-    for (const auto &predicate : last_good_predicates_)
-    {
-        auto it = std::find_if(current_predicates.begin(), current_predicates.end(),
-                               [&predicate](const plansys2::Predicate &p) { return parser::pddl::toString(p) == parser::pddl::toString(predicate); });
-        if (it == current_predicates.end())
-        {
-            RCLCPP_INFO(this->get_logger(), "Predicate removed: %s", parser::pddl::toString(predicate).c_str());
-        }
-    }
-
-    // Compare functions
-    for (const auto &function : current_functions)
-    {
-        auto it = std::find_if(last_good_functions_.begin(), last_good_functions_.end(),
-                               [&function](const plansys2::Function &f) { return parser::pddl::toString(f) == parser::pddl::toString(function); });
-        if (it == last_good_functions_.end())
-        {
-            RCLCPP_INFO(this->get_logger(), "New function added: %s", parser::pddl::toString(function).c_str());
-        }
-    }
-
-    for (const auto &function : last_good_functions_)
-    {
-        auto it = std::find_if(current_functions.begin(), current_functions.end(),
-                               [&function](const plansys2::Function &f) { return parser::pddl::toString(f) == parser::pddl::toString(function); });
-        if (it == current_functions.end())
-        {
-            RCLCPP_INFO(this->get_logger(), "Function removed: %s", parser::pddl::toString(function).c_str());
-        }
+        RCLCPP_INFO(this->get_logger(), "Saving state for action %s.", msg->action_full_name.c_str());
+        save_current_knowledge_to_file("src/my_examples/plansys2_testexample/config/new_state.txt");
+        saved_actions.insert(msg->action_full_name);  // Track the action as saved
     }
   }
-  // void save_current_knowledge()
-  // {
-  //   // Save the current state of the problem expert
-  //   last_good_instances_ = problem_expert_client_->getInstances();
-  //   last_good_predicates_ = problem_expert_client_->getPredicates();
-  //   last_good_functions_ = problem_expert_client_->getFunctions();
-  // }
-
 
   void save_current_knowledge_to_file(const std::string &filename)
   {
@@ -327,6 +208,18 @@ private:
         std::this_thread::sleep_for(1s);  // Sleep for a second and check again
     }
 
+    // Assuming robot_names are managed as part of your system's configuration
+    std::vector<std::string> robot_names = {"robot1", "robot2"}; // Customize as needed
+    
+    if (!problem_expert_client_->repairknowledge(robot_names)) {
+      RCLCPP_ERROR(this->get_logger(), "Failed to repair knowledge before replanning.");
+      return;
+    } else {
+      RCLCPP_INFO(this->get_logger(), "Knowledge successfully repaired.");
+      // Save the current state after repairing knowledge
+      save_current_knowledge_to_file("src/my_examples/plansys2_testexample/config/new_state.txt");
+    }
+    
     setup_knowledge("src/my_examples/plansys2_testexample/config/new_state.txt");
 
     // Request executor to create and execute a new plan
@@ -357,14 +250,13 @@ private:
     }
   }
 
-
+  std::unordered_set<std::string> saved_actions;
   rclcpp::Subscription<plansys2_msgs::msg::ActionExecution>::SharedPtr actions_hub_sub_;
-  rclcpp::Subscription<plansys2_msgs::msg::Knowledge>::SharedPtr knowledge_sub_;
+  rclcpp::Subscription<plansys2_msgs::msg::ActionExecutionInfo>::SharedPtr action_execution_info_sub_;
   std::shared_ptr<plansys2::DomainExpertClient> domain_expert_;
   std::shared_ptr<plansys2::ProblemExpertClient> problem_expert_client_;
   std::shared_ptr<plansys2::ExecutorClient> executor_client_;
   std::shared_ptr<plansys2::PlannerClient> planner_client_;
-  rclcpp::TimerBase::SharedPtr timer_;
 
   std::vector<plansys2::Instance> last_good_instances_;
   std::vector<plansys2::Predicate> last_good_predicates_;

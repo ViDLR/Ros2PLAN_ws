@@ -16,7 +16,6 @@ public:
     this->get_parameter("specialized_arguments", specialized_arguments_);  // Initialize robot_id
     
     robot_id_ = specialized_arguments_[0];
-
     std::string info_topic = "/simulation_info_" + robot_id_;
     std::string result_topic = "/simulation_result_" + robot_id_;
 
@@ -31,8 +30,10 @@ private:
     if (!action_in_progress_) {
       action_simulator::msg::ActionExecutionInfo msg;
       msg.robot_id = robot_id_;
+      current_room_ = current_arguments_[1];
+      goal_room_ = current_arguments_[2];
       msg.action_id = std::to_string(std::chrono::system_clock::now().time_since_epoch().count());
-      msg.action_name = "move";
+      msg.action_name = "move " + current_room_;
       msg.progress = 0.0;
 
       publisher_->publish(msg);
@@ -62,6 +63,8 @@ private:
   bool action_in_progress_;
   std::string current_action_id_;
   std::string robot_id_;
+  std::string current_room_;
+  std::string goal_room_;
   std::vector<std::string> specialized_arguments_;
   rclcpp::Publisher<action_simulator::msg::ActionExecutionInfo>::SharedPtr publisher_;
   rclcpp::Subscription<action_simulator::msg::ActionExecutionInfo>::SharedPtr subscription_;

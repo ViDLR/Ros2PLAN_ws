@@ -15,7 +15,13 @@ def generate_launch_description():
         'plansys2_namespace',
         default_value='',
         description='Global namespace for PlanSys2 components')
-
+    
+    # Declare number of robots
+    declare_number_of_robots_cmd = DeclareLaunchArgument(
+        'number_of_robots',
+        default_value='2',
+        description='Number of robots')
+    
     # PlanSys2 system bringup in a common namespace, could be global or specific
     plansys2_cmd = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(os.path.join(
@@ -37,8 +43,8 @@ def generate_launch_description():
             executable='move_action_node',
             name=f'move_action_node_{robot}',
             output='screen',
-            parameters=[{'specialized_arguments': [robot]}])  # Ensure robot_id is passed as a parameter
-
+            parameters=[{'specialized_arguments': [robot]}]) 
+        
         charge_cmd = Node(
             package='plansys2_testexample',
             executable='charge_action_node',
@@ -69,7 +75,7 @@ def generate_launch_description():
 
     # Create delayed actions for manager and UI nodes using ExecuteProcess
     delayed_manager_cmd = TimerAction(
-        period=5.0,  # Increase delay to ensure complete initialization
+        period=3.0,  # Increase delay to ensure complete initialization
         actions=[ExecuteProcess(
             cmd=['ros2', 'run', 'action_simulator', 'manager_node'],
             output='screen'
@@ -77,7 +83,7 @@ def generate_launch_description():
     )
 
     delayed_user_visualization_cmd = TimerAction(
-        period=3.0,  # Increase delay to ensure complete initialization
+        period=1.0,  # Increase delay to ensure complete initialization
         actions=[ExecuteProcess(
             cmd=['ros2', 'run', 'user_visualization_interface', 'uservisualization_node'],
             output='screen'
