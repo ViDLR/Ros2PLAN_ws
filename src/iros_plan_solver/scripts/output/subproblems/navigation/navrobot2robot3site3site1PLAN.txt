@@ -1,0 +1,2 @@
+0.000: (change_site robot3 site3 site1 cpsite3 cpsite1)  [518.646]
+0.000: (change_site robot2 site3 site1 cpsite3 cpsite1)  [518.646]

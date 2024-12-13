@@ -1,0 +1,6 @@
+0.000: (takeoff_multirotor robot3 cpbase)  [4.000]
+0.000: (takeoff_multirotor robot2 cpbase)  [4.000]
+4.001: (change_site robot3 base site2 cpbase sp3)  [207.873]
+4.001: (change_site robot2 base site2 cpbase sp3)  [207.873]
+211.875: (navigation_air_multirotor robot3 sp3 cpsite2 site2)  [13.726]
+211.875: (navigation_air_multirotor robot2 sp3 cpsite2 site2)  [13.726]

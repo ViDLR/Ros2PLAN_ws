@@ -1,0 +1,8 @@
+0.000: (survey_site_2r robot3 robot2 cpsite1 site1)  [3.333]
+3.334: (navigation_air_multirotor robot2 cpsite1 sp1 site1)  [3.526]
+3.334: (navigation_air_multirotor robot3 cpsite1 sp1 site1)  [3.526]
+6.861: (switch_airwater robot2 sp1 site1)  [5.000]
+6.861: (switch_airwater robot3 sp1 site1)  [5.000]
+11.862: (translate_data robot3 sp1 site1)  [45.000]
+12.701: (navigation_water_multirotor robot2 sp1 pp1 site1)  [14.160]
+26.862: (assess robot2 pp1 site1)  [30.000]

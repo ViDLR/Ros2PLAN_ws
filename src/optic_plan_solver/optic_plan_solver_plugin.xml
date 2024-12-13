@@ -1,0 +1,8 @@
+<class_libraries>
+  <library path="optic_plan_solver">
+    <class name="plansys2/OPTICPlanSolver" type="plansys2::OPTICPlanSolver" base_class_type="plansys2::PlanSolverBase">
+      <description>Plan solver using OPTIC with CPLEX for temporal planning in PlanSys2</description>
+    </class>
+  </library>
+</class_libraries>
+

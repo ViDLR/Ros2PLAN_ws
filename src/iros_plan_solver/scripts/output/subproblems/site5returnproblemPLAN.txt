@@ -1,0 +1,5 @@
+0.000: (switch_waterair robot3 sp17)  [8.000]
+0.000: (navigation_water_multirotor robot2 pp14 sp17 site5)  [5.040]
+5.041: (switch_waterair robot2 sp17)  [8.000]
+8.001: (navigation_air_multirotor robot3 sp17 cpsite5 site5)  [1.193]
+13.042: (navigation_air_multirotor robot2 sp17 cpsite5 site5)  [1.193]

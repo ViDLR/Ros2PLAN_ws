@@ -3,13 +3,13 @@
   <name>plansys2_testexample</name>
   <version>0.0.4</version>
 
-  <description>A simple 2 robot test of ROS2 Planning System</description>
+  <description>Example of launching test for trans-media and multi-drone coordination</description>
 
-  <maintainer email="fmrico@gmail.com">Francisco Martin Rico</maintainer>
+  <maintainer email="virgile.dlr@protonmail.com">Virgile de La Rochefoucauld</maintainer>
 
   <license>Apache License, Version 2.0</license>
 
-  <buildtool_depend>ament_cmake</buildtool_depend>
+  <buildtool_depend>ament_cmake</buildtool_depend>a
 
   <depend>rclcpp</depend>
   <depend>plansys2_msgs</depend>

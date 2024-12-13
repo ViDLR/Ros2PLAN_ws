@@ -1,0 +1,8 @@
+<class_libraries>
+  <library path="iros_plan_solver">
+    <class name="plansys2/IROSPlanSolver" type="plansys2::IROSPlanSolver" base_class_type="plansys2::PlanSolverBase">
+      <description>Plan solver using IROS solution and OPTIC with CPLEX for temporal planning in PlanSys2</description>
+    </class>
+  </library>
+</class_libraries>
+

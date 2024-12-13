@@ -1,0 +1,130 @@
+set instance robot0 robot
+set instance robot1 robot
+
+set instance base site
+set instance site1 site
+
+set instance cpbase pointofinterest
+set instance cpsite1 pointofinterest
+set instance pp1 pointofinterest
+set instance pp2 pointofinterest
+set instance sp1 pointofinterest
+set instance sp2 pointofinterest
+
+; Robot states
+set predicate (at robot0 cpbase)
+set predicate (at_site robot0 base)
+set predicate (groundconf robot0)
+set predicate (available robot0)
+
+set predicate (at robot1 cpbase)
+set predicate (at_site robot1 base)
+set predicate (groundconf robot1)
+set predicate (available robot1)
+
+; Poi/Sites states
+; base
+set predicate (transition_poi cpbase)
+set predicate (ground cpbase)
+set predicate (air cpbase)
+set predicate (partofsite cpbase base)
+
+; site1
+set predicate (survey_poi cpsite1)
+set predicate (air cpsite1)
+set predicate (partofsite cpsite1 site1)
+
+set predicate (sample_poi pp1)
+set predicate (water pp1)
+set predicate (partofsite pp1 site1)
+
+set predicate (sample_poi pp2)
+set predicate (water pp2)
+set predicate (partofsite pp2 site1)
+
+set predicate (transition_poi sp1)
+set predicate (water sp1)
+set predicate (air sp1)
+set predicate (partofsite sp1 site1)
+
+set predicate (transition_poi sp2)
+set predicate (water sp2)
+set predicate (air sp2)
+set predicate (partofsite sp2 site1)
+
+; Functions
+set function (= (speedair robot0) 1.5)
+set function (= (speedwater robot0) 0.5)
+set function (= (energy robot0) 1000000000)
+set function (= (recharge_rate robot0) 10)
+set function (= (assesscost robot0) 0.02)
+set function (= (partassesscost robot0) 0.01)
+set function (= (observecost robot0) 0.01)
+set function (= (maintainconsumption_water robot0) 0.02)
+set function (= (maintainconsumption_air robot0) 0.08)
+set function (= (navconsumption_water robot0) 0.5)
+set function (= (navconsumption_air robot0) 0.8)
+set function (= (switchduration_airwater robot0) 5)
+set function (= (switchcost_airwater robot0) 20)
+set function (= (takeoffduration_groundair robot0) 4)
+set function (= (takeoffcost_groundair robot0) 10)
+set function (= (landingduration_airground robot0) 3)
+set function (= (landingcost_airground robot0) 5)
+set function (= (switchduration_waterair robot0) 8)
+set function (= (switchcost_waterair robot0) 30)
+
+set function (= (speedair robot1) 1.5)
+set function (= (speedwater robot1) 0.5)
+set function (= (energy robot1) 1000000000)
+set function (= (recharge_rate robot1) 10)
+set function (= (assesscost robot1) 0.02)
+set function (= (partassesscost robot1) 0.01)
+set function (= (observecost robot1) 0.01)
+set function (= (maintainconsumption_water robot1) 0.02)
+set function (= (maintainconsumption_air robot1) 0.08)
+set function (= (navconsumption_water robot1) 0.5)
+set function (= (navconsumption_air robot1) 0.8)
+set function (= (switchduration_airwater robot1) 5)
+set function (= (switchcost_airwater robot1) 20)
+set function (= (takeoffduration_groundair robot1) 4)
+set function (= (takeoffcost_groundair robot1) 10)
+set function (= (landingduration_airground robot1) 3)
+set function (= (landingcost_airground robot1) 5)
+set function (= (switchduration_waterair robot1) 8)
+set function (= (switchcost_waterair robot1) 30)
+
+; DistancesPoiSites
+set function (= (site_size base) 10)
+set function (= (distance cpbase cpsite1) 89.08)
+set function (= (distance cpbase sp1) 88.1)
+set function (= (distance cpbase sp2) 94.63)
+
+set function (= (site_size site1) 20)
+set function (= (distance cpsite1 cpbase) 89.08)
+set function (= (distance cpsite1 sp1) 5.97)
+set function (= (distance cpsite1 sp2) 5.8)
+set function (= (distance pp1 pp2) 18.54)
+set function (= (distance pp1 sp1) 10.92)
+set function (= (distance pp1 sp2) 15.26)
+set function (= (distance pp2 pp1) 18.54)
+set function (= (distance pp2 sp1) 11.07)
+set function (= (distance pp2 sp2) 4.75)
+set function (= (distance sp1 cpbase) 88.1)
+set function (= (distance sp1 cpsite1) 5.97)
+set function (= (distance sp1 pp1) 10.92)
+set function (= (distance sp1 pp2) 11.07)
+set function (= (distance sp1 sp2) 9.8)
+set function (= (distance sp2 cpbase) 94.63)
+set function (= (distance sp2 cpsite1) 5.8)
+set function (= (distance sp2 pp1) 15.26)
+set function (= (distance sp2 pp2) 4.75)
+set function (= (distance sp2 sp1) 9.8)
+
+; Goals
+set goal (and (at robot0 cpsite1) (at robot1 cpsite1))
+
+
+
+
+source /home/virgile/PHD/Ros2PLAN_ws/src/my_examples/plansys2_testexample/config/initial_setup.txt
+

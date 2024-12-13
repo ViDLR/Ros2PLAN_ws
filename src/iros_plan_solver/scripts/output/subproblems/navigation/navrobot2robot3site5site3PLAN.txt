@@ -1,0 +1,4 @@
+0.000: (change_site robot3 site5 site3 cpsite5 sp11)  [347.440]
+0.000: (change_site robot2 site5 site3 cpsite5 sp11)  [347.440]
+347.441: (navigation_air_multirotor robot3 sp11 cpsite3 site3)  [15.940]
+347.441: (navigation_air_multirotor robot2 sp11 cpsite3 site3)  [15.940]

@@ -1,4 +1,5 @@
 cmake_minimum_required(VERSION 3.5)
+
 project(action_simulator)
 
 set(CMAKE_CXX_STANDARD 17)
@@ -7,85 +8,81 @@ if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   add_compile_options(-Wall -Wextra -Wpedantic)
 endif()
 
-# find dependencies
+# Find dependencies
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
-find_package(rclcpp_action REQUIRED)
-find_package(rclcpp_lifecycle REQUIRED)
-find_package(ament_index_cpp REQUIRED)
-find_package(plansys2_core REQUIRED)
-find_package(plansys2_pddl_parser REQUIRED)
 find_package(plansys2_msgs REQUIRED)
 find_package(plansys2_domain_expert REQUIRED)
 find_package(plansys2_problem_expert REQUIRED)
-find_package(plansys2_popf_plan_solver REQUIRED)
-find_package(pluginlib REQUIRED)
-find_package(std_msgs REQUIRED)
+find_package(plansys2_planner REQUIRED)
+find_package(plansys2_executor REQUIRED)
+find_package(plansys2_lifecycle_manager REQUIRED)
 find_package(lifecycle_msgs REQUIRED)
-find_package(rosidl_default_generators REQUIRED)
-find_package(plansys2_executor REQUIRED)  # Added
+find_package(plansys2_executor REQUIRED)
 
 set(dependencies
   rclcpp
-  rclcpp_action
-  rclcpp_lifecycle
-  plansys2_core
-  plansys2_pddl_parser
-  ament_index_cpp
   plansys2_msgs
+  lifecycle_msgs
   plansys2_domain_expert
   plansys2_problem_expert
-  plansys2_popf_plan_solver
-  pluginlib
-  std_msgs
-  lifecycle_msgs
-  rosidl_default_runtime
-  plansys2_executor  # Added
+  plansys2_planner
+  plansys2_executor
+  plansys2_lifecycle_manager
 )
-
-# Declare custom messages
-rosidl_generate_interfaces(${PROJECT_NAME}
-  "msg/ActionExecutionInfo.msg"
-)
-
-ament_export_dependencies(rosidl_default_runtime)
 
 # Include directories
-include_directories(
-  include
-  ${CMAKE_CURRENT_BINARY_DIR}/rosidl_generator_cpp
+include_directories(include)
+
+# Source files
+set(SOURCES
+  src/action_simulator/ExecutionManagerNode.cpp
 )
 
-# Declare a C++ executable
+# Create shared library
+add_library(${PROJECT_NAME} SHARED ${SOURCES})
+ament_target_dependencies(${PROJECT_NAME} ${dependencies})
+target_compile_definitions(${PROJECT_NAME} PUBLIC "PLUGINLIB__DISABLE_BOOST_FUNCTIONS")
+
+# Create executable nodes
+add_executable(execution_manager_node src/execution_manager_node.cpp)
+ament_target_dependencies(execution_manager_node ${dependencies})
+target_compile_definitions(execution_manager_node PUBLIC "PLUGINLIB__DISABLE_BOOST_FUNCTIONS")
+target_link_libraries(execution_manager_node ${PROJECT_NAME})
+
 add_executable(action_simulator_node src/action_simulator_node.cpp)
-ament_target_dependencies(action_simulator_node  ${dependencies})
+ament_target_dependencies(action_simulator_node ${dependencies})
+target_compile_definitions(action_simulator_node PUBLIC "PLUGINLIB__DISABLE_BOOST_FUNCTIONS")
+target_link_libraries(action_simulator_node ${PROJECT_NAME})
 
-add_executable(manager_node src/manager_node.cpp)
-ament_target_dependencies(manager_node ${dependencies})
+add_executable(team_lifecycle_manager_node src/team_lifecycle_manager_node.cpp)
+ament_target_dependencies(team_lifecycle_manager_node ${dependencies})
+target_compile_definitions(team_lifecycle_manager_node PUBLIC "PLUGINLIB__DISABLE_BOOST_FUNCTIONS")
+target_link_libraries(team_lifecycle_manager_node ${PROJECT_NAME})
 
-# Link against plansys2_executor library
-target_link_libraries(manager_node
-  ${plansys2_executor_LIBRARIES}
+# Install headers
+install(DIRECTORY include/
+  DESTINATION include/
 )
 
-# Get typesupport target for linking
-rosidl_get_typesupport_target(cpp_typesupport_target ${PROJECT_NAME} "rosidl_typesupport_cpp")
-target_link_libraries(${PROJECT_NAME}_node "${cpp_typesupport_target}")
-
-# Install executables and/or libraries
-install(TARGETS ${PROJECT_NAME}_node
-  DESTINATION lib/${PROJECT_NAME}
-)
-install(TARGETS action_simulator_node
-  manager_node
-  DESTINATION lib/${PROJECT_NAME}
+# Install library and executables
+install(TARGETS
+  ${PROJECT_NAME}
+  execution_manager_node
+  action_simulator_node
+  team_lifecycle_manager_node
+  ARCHIVE DESTINATION lib
+  LIBRARY DESTINATION lib
+  RUNTIME DESTINATION lib/${PROJECT_NAME}
 )
 
 # Install launch files
-install(DIRECTORY
-  launch
-  DESTINATION share/${PROJECT_NAME}
-)
+install(DIRECTORY launch DESTINATION share/${PROJECT_NAME})
+
+# Export information
+ament_export_include_directories(include)
+ament_export_libraries(${PROJECT_NAME})
+ament_export_dependencies(${dependencies})
 
 ament_package()
 

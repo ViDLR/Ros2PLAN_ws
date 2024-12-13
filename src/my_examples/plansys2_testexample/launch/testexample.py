@@ -5,7 +5,6 @@ from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, Time
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
-
 def generate_launch_description():
     # Get the launch directory
     example_dir = get_package_share_directory('plansys2_testexample')
@@ -16,12 +15,6 @@ def generate_launch_description():
         default_value='',
         description='Global namespace for PlanSys2 components')
     
-    # Declare number of robots
-    declare_number_of_robots_cmd = DeclareLaunchArgument(
-        'number_of_robots',
-        default_value='2',
-        description='Number of robots')
-    
     # PlanSys2 system bringup in a common namespace, could be global or specific
     plansys2_cmd = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(os.path.join(
@@ -29,35 +22,92 @@ def generate_launch_description():
             'launch',
             'plansys2_bringup_launch_monolithic.py')),
         launch_arguments={
-          'model_file': example_dir + '/pddl/test_domain.pddl',
+          'model_file': example_dir + '/pddl/MMdomainextended.pddl',
           'namespace': LaunchConfiguration('plansys2_namespace')
           }.items())
     
     # Robot-specific configurations, but without separate namespaces for actions
-    robots = ['robot1', 'robot2']
+    robots = ["robot{0}".format(i) for i in range(0, 2)]
     robot_actions = []
 
+    # ADDING NAMESPACE TO ROBOTS ?
     for robot in robots:
-        move_cmd = Node(
+        landing_cmd = Node(
             package='plansys2_testexample',
-            executable='move_action_node',
-            name=f'move_action_node_{robot}',
+            executable='landing_action_node',
+            name=f'landing_action_node_{robot}',
             output='screen',
             parameters=[{'specialized_arguments': [robot]}]) 
         
-        charge_cmd = Node(
+        takeoff_cmd = Node(
             package='plansys2_testexample',
-            executable='charge_action_node',
-            name=f'charge_action_node_{robot}',
+            executable='takeoff_action_node',
+            name=f'takeoff_action_node_{robot}',
+            output='screen',
+            parameters=[{'specialized_arguments': [robot]}]) 
+        
+        navigation_air_cmd = Node(
+            package='plansys2_testexample',
+            executable='navigation_air_action_node',
+            name=f'navigation_air_action_node_{robot}',
+            output='screen',
+            parameters=[{'specialized_arguments': [robot]}]) 
+        
+        navigation_water_cmd = Node(
+            package='plansys2_testexample',
+            executable='navigation_water_action_node',
+            name=f'navigation_water_action_node_{robot}',
+            output='screen',
+            parameters=[{'specialized_arguments': [robot]}]) 
+        
+        change_site_cmd = Node(
+            package='plansys2_testexample',
+            executable='change_site_action_node',
+            name=f'change_site_action_node_{robot}',
+            output='screen',
+            parameters=[{'specialized_arguments': [robot]}]) 
+        
+        switch_airwater_cmd = Node(
+            package='plansys2_testexample',
+            executable='switch_airwater_action_node',
+            name=f'switch_airwater_action_node_{robot}',
             output='screen',
             parameters=[{'specialized_arguments': [robot]}])
-
-        ask_charge_cmd = Node(
+        
+        switch_waterair_cmd = Node(
             package='plansys2_testexample',
-            executable='ask_charge_action_node',
-            name=f'ask_charge_action_node_{robot}',
+            executable='switch_waterair_action_node',
+            name=f'switch_waterair_action_node_{robot}',
             output='screen',
-            parameters=[{'specialized_arguments': [robot]}])
+            parameters=[{'specialized_arguments': [robot]}]) 
+        
+        translate_data_cmd = Node(
+            package='plansys2_testexample',
+            executable='translate_data_action_node',
+            name=f'translate_data_action_node_{robot}',
+            output='screen',
+            parameters=[{'specialized_arguments': [robot]}]) 
+        
+        observe_cmd = Node(
+            package='plansys2_testexample',
+            executable='observe_action_node',
+            name=f'observe_action_node_{robot}',
+            output='screen',
+            parameters=[{'specialized_arguments': [robot]}]) 
+        
+        observe_2r_cmd = Node(
+            package='plansys2_testexample',
+            executable='observe_2r_action_node',
+            name=f'observe_2r_action_node_{robot}',
+            output='screen',
+            parameters=[{'specialized_arguments': [robot]}]) 
+        
+        sample_cmd = Node(
+            package='plansys2_testexample',
+            executable='sample_action_node',
+            name=f'sample_action_node_{robot}',
+            output='screen',
+            parameters=[{'specialized_arguments': [robot]}]) 
         
         simulator_cmd = Node(
             package='action_simulator',
@@ -67,9 +117,17 @@ def generate_launch_description():
             parameters=[{'robot_id': robot}])
 
         robot_actions.extend([
-            move_cmd,
-            charge_cmd,
-            ask_charge_cmd,
+            landing_cmd,
+            navigation_water_cmd,
+            navigation_air_cmd,
+            change_site_cmd,
+            observe_cmd,
+            observe_2r_cmd,
+            switch_airwater_cmd,
+            switch_waterair_cmd,
+            takeoff_cmd,
+            translate_data_cmd,
+            sample_cmd,
             simulator_cmd
         ])
 
@@ -77,7 +135,7 @@ def generate_launch_description():
     delayed_manager_cmd = TimerAction(
         period=3.0,  # Increase delay to ensure complete initialization
         actions=[ExecuteProcess(
-            cmd=['ros2', 'run', 'action_simulator', 'manager_node'],
+            cmd=['ros2', 'run', 'action_simulator', 'execution_manager_node'],
             output='screen'
         )]
     )
