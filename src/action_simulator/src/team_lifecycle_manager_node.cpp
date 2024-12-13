@@ -40,14 +40,12 @@ private:
     std::mutex thread_mutex_;
     std::atomic<bool> stop_all_flag_;
 
-    std::shared_ptr<plansys2::ExecutorNode> create_executor_node(
-    const std::string &node_name, const std::string &namespace_)
+    std::shared_ptr<plansys2::ExecutorNode> create_executor_node(const std::string &namespace_)
     {
-        rclcpp::NodeOptions options;
-        options.arguments(
-            {"--ros-args", "--remap", "__node:=" + node_name, "--remap", "__ns:=" + namespace_});
-        return std::make_shared<plansys2::ExecutorNode>(options);
+        // The node name is always "executor", the namespace is dynamically provided
+        return std::make_shared<plansys2::ExecutorNode>("executor", namespace_);
     }
+
 
     void handleStartTeams(
         const plansys2_msgs::srv::StartTeams::Request::SharedPtr request,
@@ -65,15 +63,18 @@ private:
                 continue;
             }
 
+            // Namespace is dynamically set for each team
+            const std::string namespace_ = "/" + team_name;
+
             auto exe = std::make_shared<rclcpp::executors::MultiThreadedExecutor>(rclcpp::ExecutorOptions(), 2);
-            auto executor_node = std::make_shared<plansys2::ExecutorNode>("executor_" + team_name, "/team/" + team_name);
+            auto executor_node = std::make_shared<plansys2::ExecutorNode>("executor" , team_name);
 
             exe->add_node(executor_node->get_node_base_interface());
 
             // Add lifecycle management
             std::map<std::string, std::shared_ptr<plansys2::LifecycleServiceClient>> manager_nodes;
-            manager_nodes["executor_" + team_name] = std::make_shared<plansys2::LifecycleServiceClient>(
-                "executor_" + team_name + "_lc_mngr", "executor_" + team_name);
+            manager_nodes[team_name + "/executor"] = std::make_shared<plansys2::LifecycleServiceClient>(
+               team_name + "/executor_lc_mngr", team_name + "/executor");
 
             for (auto &manager_node : manager_nodes)
             {
