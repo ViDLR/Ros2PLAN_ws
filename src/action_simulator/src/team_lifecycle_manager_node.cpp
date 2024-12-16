@@ -18,34 +18,39 @@ class TeamLifecycleManager : public rclcpp::Node
 public:
     TeamLifecycleManager() : Node("team_lifecycle_manager"), stop_all_flag_(false)
     {
+        // Create services for starting and stopping teams
         start_teams_service_ = this->create_service<plansys2_msgs::srv::StartTeams>(
             "start_teams",
             std::bind(&TeamLifecycleManager::handleStartTeams, this, std::placeholders::_1, std::placeholders::_2));
-
         stop_teams_service_ = this->create_service<plansys2_msgs::srv::StopTeams>(
             "stop_teams",
             std::bind(&TeamLifecycleManager::handleStopTeams, this, std::placeholders::_1, std::placeholders::_2));
+
+        // Initialize the shared MultiThreadedExecutor
+        shared_executor_ = std::make_shared<rclcpp::executors::MultiThreadedExecutor>(rclcpp::ExecutorOptions(), 4);
+        spin_thread_ = std::thread([this]() {
+            RCLCPP_INFO(this->get_logger(), "Spinning shared executor...");
+            shared_executor_->spin();
+        });
     }
 
     ~TeamLifecycleManager()
     {
         stopAllExecutors();
+        if (spin_thread_.joinable())
+        {
+            spin_thread_.join();
+        }
     }
 
 private:
     rclcpp::Service<plansys2_msgs::srv::StartTeams>::SharedPtr start_teams_service_;
     rclcpp::Service<plansys2_msgs::srv::StopTeams>::SharedPtr stop_teams_service_;
-    std::map<std::string, std::shared_ptr<std::thread>> team_threads_;
-    std::map<std::string, std::shared_ptr<rclcpp::executors::MultiThreadedExecutor>> team_executors_;
+    std::shared_ptr<rclcpp::executors::MultiThreadedExecutor> shared_executor_;
+    std::map<std::string, std::shared_ptr<plansys2::ExecutorNode>> team_nodes_;
     std::mutex thread_mutex_;
     std::atomic<bool> stop_all_flag_;
-
-    std::shared_ptr<plansys2::ExecutorNode> create_executor_node(const std::string &namespace_)
-    {
-        // The node name is always "executor", the namespace is dynamically provided
-        return std::make_shared<plansys2::ExecutorNode>("executor", namespace_);
-    }
-
+    std::thread spin_thread_;
 
     void handleStartTeams(
         const plansys2_msgs::srv::StartTeams::Request::SharedPtr request,
@@ -56,54 +61,19 @@ private:
             const std::string &team_name = team_entry.name;
 
             std::lock_guard<std::mutex> lock(thread_mutex_);
-
-            if (team_threads_.count(team_name) > 0)
+            if (team_nodes_.count(team_name) > 0)
             {
                 RCLCPP_WARN(this->get_logger(), "Team %s is already running.", team_name.c_str());
                 continue;
             }
 
-            // Namespace is dynamically set for each team
-            const std::string namespace_ = "/" + team_name;
+            // Create and add a new ExecutorNode for the team
+            RCLCPP_INFO(this->get_logger(), "Starting team: %s", team_name.c_str());
+            auto team_node = std::make_shared<plansys2::ExecutorNode>("executor_" + team_name, "/" + team_name);
+            shared_executor_->add_node(team_node->get_node_base_interface());
+            team_nodes_[team_name] = team_node;
 
-            auto exe = std::make_shared<rclcpp::executors::MultiThreadedExecutor>(rclcpp::ExecutorOptions(), 2);
-            auto executor_node = std::make_shared<plansys2::ExecutorNode>("executor" , team_name);
-
-            exe->add_node(executor_node->get_node_base_interface());
-
-            // Add lifecycle management
-            std::map<std::string, std::shared_ptr<plansys2::LifecycleServiceClient>> manager_nodes;
-            manager_nodes[team_name + "/executor"] = std::make_shared<plansys2::LifecycleServiceClient>(
-               team_name + "/executor_lc_mngr", team_name + "/executor");
-
-            for (auto &manager_node : manager_nodes)
-            {
-                manager_node.second->init();
-                exe->add_node(manager_node.second);
-            }
-
-            std::shared_future<bool> startup_future = std::async(
-                std::launch::async,
-                std::bind(plansys2::startup_function, manager_nodes, std::chrono::seconds(60)));
-            exe->spin_until_future_complete(startup_future);
-            
-
-            if (!startup_future.get())
-            {
-                RCLCPP_ERROR(this->get_logger(), "Failed to start executor for team: %s", team_name.c_str());
-                continue;
-            }
-
-            // Store the executor in the map
-            team_executors_[team_name] = exe;
-
-            // Create a new thread to spin the executor
-            team_threads_[team_name] = std::make_shared<std::thread>([exe]() {
-                RCLCPP_INFO(rclcpp::get_logger("team_lifecycle_manager"), "Executor for team spinning.");
-                exe->spin();
-            });
-
-            RCLCPP_INFO(this->get_logger(), "Started executor for team: %s", team_name.c_str());
+            RCLCPP_INFO(this->get_logger(), "Team %s started.", team_name.c_str());
         }
 
         response->success = true;
@@ -119,29 +89,18 @@ private:
         {
             const std::string &team_name = team_entry.name;
 
-            if (team_threads_.count(team_name) > 0)
+            if (team_nodes_.count(team_name) == 0)
             {
-                RCLCPP_INFO(this->get_logger(), "Stopping executor for team: %s", team_name.c_str());
-
-                auto executor = team_executors_[team_name];
-                executor->cancel();
-
-                if (team_threads_[team_name]->joinable())
-                {
-                    team_threads_[team_name]->join();
-                }
-
-                team_threads_.erase(team_name);
-                team_executors_.erase(team_name);
-
-                RCLCPP_INFO(this->get_logger(), "Stopped executor for team: %s", team_name.c_str());
+                RCLCPP_WARN(this->get_logger(), "Team %s is not running.", team_name.c_str());
+                continue;
             }
-            else
-            {
-                RCLCPP_WARN(this->get_logger(),
-                            "Executor for team %s not found or already stopped.",
-                            team_name.c_str());
-            }
+
+            // Remove the ExecutorNode for the team
+            RCLCPP_INFO(this->get_logger(), "Stopping team: %s", team_name.c_str());
+            shared_executor_->remove_node(team_nodes_[team_name]->get_node_base_interface());
+            team_nodes_.erase(team_name);
+
+            RCLCPP_INFO(this->get_logger(), "Team %s stopped.", team_name.c_str());
         }
 
         response->success = true;
@@ -150,29 +109,17 @@ private:
 
     void stopAllExecutors()
     {
-        RCLCPP_INFO(this->get_logger(), "Stopping all executors...");
-
-        stop_all_flag_.store(true);
-
+        RCLCPP_INFO(this->get_logger(), "Stopping all teams...");
         std::lock_guard<std::mutex> lock(thread_mutex_);
-        for (auto &thread_entry : team_threads_)
+        for (auto &team_entry : team_nodes_)
         {
-            const auto &team_name = thread_entry.first;
-            auto executor = team_executors_[team_name];
-            executor->cancel();
-
-            if (thread_entry.second->joinable())
-            {
-                thread_entry.second->join();
-            }
+            shared_executor_->remove_node(team_entry.second->get_node_base_interface());
         }
-
-        team_threads_.clear();
-        team_executors_.clear();
-
-        RCLCPP_INFO(this->get_logger(), "All executors stopped.");
+        team_nodes_.clear();
+        RCLCPP_INFO(this->get_logger(), "All teams stopped.");
     }
 };
+
 
 int main(int argc, char **argv)
 {
@@ -189,3 +136,36 @@ int main(int argc, char **argv)
     rclcpp::shutdown();
     return 0;
 }
+
+// // int main(int argc, char **argv)
+// // {
+// //     rclcpp::init(argc, argv);
+
+// //     // Create a MultiThreadedExecutor with 2 threads
+// //     rclcpp::executors::MultiThreadedExecutor executor(rclcpp::ExecutorOptions(), 2);
+
+// //     // Log and create the first executor node
+// //     RCLCPP_INFO(rclcpp::get_logger("test"), "Creating first executor...");
+// //     auto executor1 = std::make_shared<plansys2::ExecutorNode>("executor_team1", "/team1");
+// //     RCLCPP_INFO(rclcpp::get_logger("test"), "First executor created!");
+
+// //     // Add the first executor node to the MultiThreadedExecutor
+// //     executor.add_node(executor1->get_node_base_interface());
+
+// //     // Log and create the second executor node
+// //     RCLCPP_INFO(rclcpp::get_logger("test"), "Creating second executor...");
+// //     auto executor2 = std::make_shared<plansys2::ExecutorNode>("executor_team2", "/team2");
+// //     RCLCPP_INFO(rclcpp::get_logger("test"), "Second executor created!");
+
+// //     // Add the second executor node to the MultiThreadedExecutor
+// //     executor.add_node(executor2->get_node_base_interface());
+
+// //     // Spin the executor
+// //     RCLCPP_INFO(rclcpp::get_logger("test"), "Spinning the executors...");
+// //     executor.spin();
+
+// //     // Shutdown and exit
+// //     rclcpp::shutdown();
+// //     return 0;
+// // }
+
