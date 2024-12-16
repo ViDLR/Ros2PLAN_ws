@@ -50,16 +50,6 @@ ament_target_dependencies(execution_manager_node ${dependencies})
 target_compile_definitions(execution_manager_node PUBLIC "PLUGINLIB__DISABLE_BOOST_FUNCTIONS")
 target_link_libraries(execution_manager_node ${PROJECT_NAME})
 
-add_executable(action_simulator_node src/action_simulator_node.cpp)
-ament_target_dependencies(action_simulator_node ${dependencies})
-target_compile_definitions(action_simulator_node PUBLIC "PLUGINLIB__DISABLE_BOOST_FUNCTIONS")
-target_link_libraries(action_simulator_node ${PROJECT_NAME})
-
-add_executable(team_lifecycle_manager_node src/team_lifecycle_manager_node.cpp)
-ament_target_dependencies(team_lifecycle_manager_node ${dependencies})
-target_compile_definitions(team_lifecycle_manager_node PUBLIC "PLUGINLIB__DISABLE_BOOST_FUNCTIONS")
-target_link_libraries(team_lifecycle_manager_node ${PROJECT_NAME})
-
 # Install headers
 install(DIRECTORY include/
   DESTINATION include/
@@ -69,8 +59,6 @@ install(DIRECTORY include/
 install(TARGETS
   ${PROJECT_NAME}
   execution_manager_node
-  action_simulator_node
-  team_lifecycle_manager_node
   ARCHIVE DESTINATION lib
   LIBRARY DESTINATION lib
   RUNTIME DESTINATION lib/${PROJECT_NAME}

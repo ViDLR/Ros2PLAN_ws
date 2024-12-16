@@ -2,6 +2,7 @@
 #include <plansys2_msgs/srv/start_teams.hpp>
 #include <plansys2_msgs/srv/stop_teams.hpp>
 #include "plansys2_lifecycle_manager/lifecycle_manager.hpp"
+#include "action_simulator/action_simulator_node.hpp"
 #include "plansys2_executor/ExecutorNode.hpp"
 #include <unordered_map>
 #include <vector>
@@ -52,14 +53,16 @@ private:
     std::mutex thread_mutex_;
     std::atomic<bool> stop_all_flag_;
     std::thread spin_thread_;
+    std::map<std::string, std::vector<std::shared_ptr<rclcpp::Node>>> robot_nodes_;
 
     void handleStartTeams(
     const plansys2_msgs::srv::StartTeams::Request::SharedPtr request,
     const plansys2_msgs::srv::StartTeams::Response::SharedPtr response)
-{
+    {
     for (const auto &team_entry : request->teams)
     {
         const std::string &team_name = team_entry.name;
+        const auto &robots = team_entry.robots; // List of robots for this team
 
         std::lock_guard<std::mutex> lock(thread_mutex_);
         if (team_nodes_.count(team_name) > 0)
@@ -98,7 +101,35 @@ private:
         }
 
         RCLCPP_INFO(this->get_logger(), "LifecycleServiceClient for team %s successfully configured and activated.", team_name.c_str());
-        RCLCPP_INFO(this->get_logger(), "Team %s started.", team_name.c_str());
+
+        // Create robot action and simulator nodes
+        std::vector<std::shared_ptr<rclcpp::Node>> robots_nodes;
+        for (const auto &robot : robots)
+        {
+            // Create simulator node
+            auto simulator_node = std::make_shared<SimulationNode>();
+            simulator_node->set_parameter(rclcpp::Parameter("robot_id", robot));
+            simulator_node->set_parameter(rclcpp::Parameter("team_name", team_name));
+            shared_executor_->add_node(simulator_node);
+            robots_nodes.push_back(simulator_node);
+
+            // Create action nodes
+            for (const auto &action : {"landing", "takeoff", "change_site", "navigation_air",
+                                       "navigation_water", "switch_airwater", "switch_waterair",
+                                       "translate_data", "observe", "observe_2r", "sample"})
+            {
+                auto action_node = std::make_shared<ChangSiteAction>();
+                action_node->set_parameter(rclcpp::Parameter("specialized_arguments", std::vector<std::string>{robot}));
+                action_node->set_parameter(rclcpp::Parameter("team_name", team_name));
+                shared_executor_->add_node(action_node);
+                robots_nodes.push_back(action_node);
+            }
+        }
+
+        // Store the created robot nodes
+        robot_nodes_[team_name] = robots_nodes;
+
+        RCLCPP_INFO(this->get_logger(), "Team %s started with %lu robots.", team_name.c_str(), robots.size());
     }
 
     response->success = true;
@@ -106,9 +137,9 @@ private:
     }
 
     void handleStopTeams(
-    const plansys2_msgs::srv::StopTeams::Request::SharedPtr request,
-    const plansys2_msgs::srv::StopTeams::Response::SharedPtr response)
-{
+        const plansys2_msgs::srv::StopTeams::Request::SharedPtr request,
+        const plansys2_msgs::srv::StopTeams::Response::SharedPtr response)
+    {
     std::lock_guard<std::mutex> lock(thread_mutex_);
     for (const auto &team_entry : request->teams)
     {
@@ -118,6 +149,17 @@ private:
         {
             RCLCPP_WARN(this->get_logger(), "Team %s is not running.", team_name.c_str());
             continue;
+        }
+
+        // Stop robot nodes
+        RCLCPP_INFO(this->get_logger(), "Stopping robot nodes for team: %s", team_name.c_str());
+        if (robot_nodes_.count(team_name) > 0)
+        {
+            for (auto &robot_node : robot_nodes_[team_name])
+            {
+                shared_executor_->remove_node(robot_node);
+            }
+            robot_nodes_.erase(team_name);
         }
 
         // Deactivate and shut down lifecycle manager
@@ -137,6 +179,16 @@ private:
             lifecycle_clients_.erase(team_name);
         }
 
+        // Remove robot nodes
+        if (robot_nodes_.count(team_name) > 0)
+        {
+            for (const auto &robot_node : robot_nodes_[team_name])
+            {
+                shared_executor_->remove_node(robot_node);
+            }
+            robot_nodes_.erase(team_name);
+        }
+
         // Remove the ExecutorNode for the team
         RCLCPP_INFO(this->get_logger(), "Removing ExecutorNode for team: %s", team_name.c_str());
         shared_executor_->remove_node(team_nodes_[team_name]->get_node_base_interface());
@@ -148,8 +200,6 @@ private:
     response->success = true;
     response->message = "Teams stopped successfully.";
     }
-
-
 
     void stopAllExecutors()
     {

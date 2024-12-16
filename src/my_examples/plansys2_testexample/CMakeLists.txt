@@ -14,40 +14,30 @@ set(dependencies
     plansys2_msgs
     plansys2_executor
     action_simulator
+    plansys2_executor
+    plansys2_lifecycle_manager
 )
 
-add_executable(navigation_water_action_node src/navigation_water_action_node.cpp)
-ament_target_dependencies(navigation_water_action_node ${dependencies})
+# Add include directories
+include_directories(include)
 
-add_executable(navigation_air_action_node src/navigation_air_action_node.cpp)
-ament_target_dependencies(navigation_air_action_node ${dependencies})
+# Group all action node sources into a single library
+set(ACTION_NODE_SOURCES
+  src/navigation_water_action_node.cpp
+  src/navigation_air_action_node.cpp
+  src/landing_action_node.cpp
+  src/takeoff_action_node.cpp
+  src/switch_airwater_action_node.cpp
+  src/switch_waterair_action_node.cpp
+  src/translate_data_action_node.cpp
+  src/observe_action_node.cpp
+  src/observe_2r_action_node.cpp
+  src/sample_action_node.cpp
+  src/change_site_action_node.cpp
+)
 
-add_executable(landing_action_node src/landing_action_node.cpp)
-ament_target_dependencies(landing_action_node ${dependencies})
-
-add_executable(takeoff_action_node src/takeoff_action_node.cpp)
-ament_target_dependencies(takeoff_action_node ${dependencies})
-
-add_executable(switch_airwater_action_node src/switch_airwater_action_node.cpp)
-ament_target_dependencies(switch_airwater_action_node ${dependencies})
-
-add_executable(switch_waterair_action_node src/switch_waterair_action_node.cpp)
-ament_target_dependencies(switch_waterair_action_node ${dependencies})
-
-add_executable(translate_data_action_node src/translate_data_action_node.cpp)
-ament_target_dependencies(translate_data_action_node ${dependencies})
-
-add_executable(observe_action_node src/observe_action_node.cpp)
-ament_target_dependencies(observe_action_node ${dependencies})
-
-add_executable(observe_2r_action_node src/observe_2r_action_node.cpp)
-ament_target_dependencies(observe_2r_action_node ${dependencies})
-
-add_executable(sample_action_node src/sample_action_node.cpp)
-ament_target_dependencies(sample_action_node ${dependencies})
-
-add_executable(change_site_action_node src/change_site_action_node.cpp)
-ament_target_dependencies(change_site_action_node ${dependencies})
+add_library(action_nodes ${ACTION_NODE_SOURCES})
+ament_target_dependencies(action_nodes ${dependencies})
 
 add_executable(plansys2_core_bringup src/plansys2_core_bringup.cpp)
 ament_target_dependencies(plansys2_core_bringup ${dependencies})
@@ -55,20 +45,24 @@ ament_target_dependencies(plansys2_core_bringup ${dependencies})
 add_executable(emn_bringup src/emn_bringup.cpp)
 ament_target_dependencies(emn_bringup ${dependencies})
 
+add_executable(team_lifecycle_manager_node src/team_lifecycle_manager_node.cpp)
+ament_target_dependencies(team_lifecycle_manager_node ${dependencies})
+target_compile_definitions(team_lifecycle_manager_node PUBLIC "PLUGINLIB__DISABLE_BOOST_FUNCTIONS")
+target_link_libraries(team_lifecycle_manager_node action_nodes)
+
+
+# Install headers
+install(DIRECTORY include/
+  DESTINATION include/
+)
+
+
 install(DIRECTORY launch pddl DESTINATION share/${PROJECT_NAME})
 
+# Install targets
 install(TARGETS
-  navigation_water_action_node
-  navigation_air_action_node
-  landing_action_node
-  takeoff_action_node
-  switch_waterair_action_node
-  switch_airwater_action_node
-  translate_data_action_node
-  observe_action_node
-  observe_2r_action_node
-  sample_action_node
-  change_site_action_node
+  action_nodes
+  team_lifecycle_manager_node
   plansys2_core_bringup
   emn_bringup
   ARCHIVE DESTINATION lib
