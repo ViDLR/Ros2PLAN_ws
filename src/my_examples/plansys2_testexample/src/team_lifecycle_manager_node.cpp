@@ -1,64 +1,36 @@
-#include <rclcpp/rclcpp.hpp>
-#include <plansys2_msgs/srv/start_teams.hpp>
-#include <plansys2_msgs/srv/stop_teams.hpp>
-#include "plansys2_lifecycle_manager/lifecycle_manager.hpp"
-#include "action_simulator/action_simulator_node.hpp"
-#include "plansys2_executor/ExecutorNode.hpp"
-#include <unordered_map>
-#include <vector>
-#include <map>
-#include <string>
-#include <mutex>
-#include <thread>
-#include <memory>
-#include <condition_variable>
-#include <atomic>
+#include "plansys2_testexample/team_lifecycle_manager.hpp"
 
-class TeamLifecycleManager : public rclcpp::Node
+TeamLifecycleManager::TeamLifecycleManager() : Node("team_lifecycle_manager"), stop_all_flag_(false)
 {
-public:
-    TeamLifecycleManager() : Node("team_lifecycle_manager"), stop_all_flag_(false)
+    // Create services for starting and stopping teams
+    start_teams_service_ = this->create_service<plansys2_msgs::srv::StartTeams>(
+        "start_teams",
+        std::bind(&TeamLifecycleManager::handleStartTeams, this, std::placeholders::_1, std::placeholders::_2));
+    stop_teams_service_ = this->create_service<plansys2_msgs::srv::StopTeams>(
+        "stop_teams",
+        std::bind(&TeamLifecycleManager::handleStopTeams, this, std::placeholders::_1, std::placeholders::_2));
+
+    // Initialize the shared MultiThreadedExecutor
+    shared_executor_ = std::make_shared<rclcpp::executors::MultiThreadedExecutor>(rclcpp::ExecutorOptions(), 4);
+    spin_thread_ = std::thread([this]() {
+        RCLCPP_INFO(this->get_logger(), "Spinning shared executor...");
+        shared_executor_->spin();
+    });
+}
+
+TeamLifecycleManager::~TeamLifecycleManager()
+{
+    stopAllExecutors();
+    if (spin_thread_.joinable())
     {
-        // Create services for starting and stopping teams
-        start_teams_service_ = this->create_service<plansys2_msgs::srv::StartTeams>(
-            "start_teams",
-            std::bind(&TeamLifecycleManager::handleStartTeams, this, std::placeholders::_1, std::placeholders::_2));
-        stop_teams_service_ = this->create_service<plansys2_msgs::srv::StopTeams>(
-            "stop_teams",
-            std::bind(&TeamLifecycleManager::handleStopTeams, this, std::placeholders::_1, std::placeholders::_2));
-
-        // Initialize the shared MultiThreadedExecutor
-        shared_executor_ = std::make_shared<rclcpp::executors::MultiThreadedExecutor>(rclcpp::ExecutorOptions(), 4);
-        spin_thread_ = std::thread([this]() {
-            RCLCPP_INFO(this->get_logger(), "Spinning shared executor...");
-            shared_executor_->spin();
-        });
+        spin_thread_.join();
     }
+}
 
-    ~TeamLifecycleManager()
-    {
-        stopAllExecutors();
-        if (spin_thread_.joinable())
-        {
-            spin_thread_.join();
-        }
-    }
-
-private:
-    rclcpp::Service<plansys2_msgs::srv::StartTeams>::SharedPtr start_teams_service_;
-    rclcpp::Service<plansys2_msgs::srv::StopTeams>::SharedPtr stop_teams_service_;
-    std::map<std::string, std::shared_ptr<plansys2::LifecycleServiceClient>> lifecycle_clients_;
-    std::shared_ptr<rclcpp::executors::MultiThreadedExecutor> shared_executor_;
-    std::map<std::string, std::shared_ptr<plansys2::ExecutorNode>> team_nodes_;
-    std::mutex thread_mutex_;
-    std::atomic<bool> stop_all_flag_;
-    std::thread spin_thread_;
-    std::map<std::string, std::vector<std::shared_ptr<rclcpp::Node>>> robot_nodes_;
-
-    void handleStartTeams(
+void TeamLifecycleManager::handleStartTeams(
     const plansys2_msgs::srv::StartTeams::Request::SharedPtr request,
     const plansys2_msgs::srv::StartTeams::Response::SharedPtr response)
-    {
+{
     for (const auto &team_entry : request->teams)
     {
         const std::string &team_name = team_entry.name;
@@ -86,134 +58,235 @@ private:
         lifecycle_clients_[team_name] = lifecycle_client;
 
         // Trigger lifecycle transitions
-        RCLCPP_INFO(this->get_logger(), "Configuring LifecycleServiceClient for team: %s", team_name.c_str());
         if (!lifecycle_client->change_state(lifecycle_msgs::msg::Transition::TRANSITION_CONFIGURE))
         {
             RCLCPP_ERROR(this->get_logger(), "Failed to configure LifecycleServiceClient for team: %s", team_name.c_str());
             continue;
         }
 
-        RCLCPP_INFO(this->get_logger(), "Activating LifecycleServiceClient for team: %s", team_name.c_str());
         if (!lifecycle_client->change_state(lifecycle_msgs::msg::Transition::TRANSITION_ACTIVATE))
         {
             RCLCPP_ERROR(this->get_logger(), "Failed to activate LifecycleServiceClient for team: %s", team_name.c_str());
             continue;
         }
 
-        RCLCPP_INFO(this->get_logger(), "LifecycleServiceClient for team %s successfully configured and activated.", team_name.c_str());
+        std::vector<std::shared_ptr<rclcpp::Node>> normal_robot_nodes;
+        std::vector<std::shared_ptr<rclcpp_lifecycle::LifecycleNode>> lifecycle_robot_nodes;
 
-        // Create robot action and simulator nodes
-        std::vector<std::shared_ptr<rclcpp::Node>> robots_nodes;
         for (const auto &robot : robots)
         {
-            // Create simulator node
-            auto simulator_node = std::make_shared<SimulationNode>();
+            auto simulator_node = std::make_shared<SimulationNode>(robot, team_name);
             simulator_node->set_parameter(rclcpp::Parameter("robot_id", robot));
             simulator_node->set_parameter(rclcpp::Parameter("team_name", team_name));
-            shared_executor_->add_node(simulator_node);
-            robots_nodes.push_back(simulator_node);
 
-            // Create action nodes
-            for (const auto &action : {"landing", "takeoff", "change_site", "navigation_air",
-                                       "navigation_water", "switch_airwater", "switch_waterair",
-                                       "translate_data", "observe", "observe_2r", "sample"})
+            shared_executor_->add_node(simulator_node);
+            normal_robot_nodes.push_back(simulator_node);
+
+            for (auto action_type : getAllActionTypes())
             {
-                auto action_node = std::make_shared<ChangSiteAction>();
+                auto action_node = createActionNode(action_type, robot, team_name);
                 action_node->set_parameter(rclcpp::Parameter("specialized_arguments", std::vector<std::string>{robot}));
                 action_node->set_parameter(rclcpp::Parameter("team_name", team_name));
-                shared_executor_->add_node(action_node);
-                robots_nodes.push_back(action_node);
+
+                action_node->trigger_transition(lifecycle_msgs::msg::Transition::TRANSITION_CONFIGURE);
+                shared_executor_->add_node(action_node->get_node_base_interface());
+                lifecycle_robot_nodes.push_back(action_node);
             }
         }
 
-        // Store the created robot nodes
-        robot_nodes_[team_name] = robots_nodes;
-
+        normal_robot_nodes_[team_name] = normal_robot_nodes;
+        lifecycle_robot_nodes_[team_name] = lifecycle_robot_nodes;
         RCLCPP_INFO(this->get_logger(), "Team %s started with %lu robots.", team_name.c_str(), robots.size());
     }
 
     response->success = true;
     response->message = "Teams started successfully.";
-    }
+}
 
-    void handleStopTeams(
-        const plansys2_msgs::srv::StopTeams::Request::SharedPtr request,
-        const plansys2_msgs::srv::StopTeams::Response::SharedPtr response)
-    {
+void TeamLifecycleManager::handleStopTeams(
+    const plansys2_msgs::srv::StopTeams::Request::SharedPtr request,
+    const plansys2_msgs::srv::StopTeams::Response::SharedPtr response) {
+
     std::lock_guard<std::mutex> lock(thread_mutex_);
-    for (const auto &team_entry : request->teams)
-    {
+    for (const auto &team_entry : request->teams) {
         const std::string &team_name = team_entry.name;
 
-        if (team_nodes_.count(team_name) == 0)
-        {
+        if (team_nodes_.count(team_name) == 0) {
             RCLCPP_WARN(this->get_logger(), "Team %s is not running.", team_name.c_str());
             continue;
         }
 
-        // Stop robot nodes
-        RCLCPP_INFO(this->get_logger(), "Stopping robot nodes for team: %s", team_name.c_str());
-        if (robot_nodes_.count(team_name) > 0)
-        {
-            for (auto &robot_node : robot_nodes_[team_name])
-            {
-                shared_executor_->remove_node(robot_node);
+        // Stop normal nodes
+        if (normal_robot_nodes_.count(team_name) > 0) {
+            RCLCPP_INFO(this->get_logger(), "Stopping normal nodes for team: %s", team_name.c_str());
+            for (auto &node : normal_robot_nodes_[team_name]) {
+                shared_executor_->remove_node(node);
             }
-            robot_nodes_.erase(team_name);
+            normal_robot_nodes_.erase(team_name);
         }
 
-        // Deactivate and shut down lifecycle manager
-        auto lifecycle_client = lifecycle_clients_[team_name];
-        if (lifecycle_client)
-        {
-            RCLCPP_INFO(this->get_logger(), "Deactivating LifecycleServiceClient for team: %s", team_name.c_str());
-            if (!lifecycle_client->change_state(lifecycle_msgs::msg::Transition::TRANSITION_DEACTIVATE))
-            {
+        // Stop lifecycle nodes
+        if (lifecycle_robot_nodes_.count(team_name) > 0) {
+            RCLCPP_INFO(this->get_logger(), "Stopping lifecycle nodes for team: %s", team_name.c_str());
+            for (auto &node : lifecycle_robot_nodes_[team_name]) {
+                auto current_state = node->get_current_state().id();
+
+                if (current_state == lifecycle_msgs::msg::State::PRIMARY_STATE_ACTIVE) {
+                    RCLCPP_INFO(this->get_logger(), "Deactivating node: %s", node->get_name());
+                    node->trigger_transition(lifecycle_msgs::msg::Transition::TRANSITION_DEACTIVATE);
+                }
+
+                current_state = node->get_current_state().id();
+                if (current_state == lifecycle_msgs::msg::State::PRIMARY_STATE_INACTIVE) {
+                    RCLCPP_INFO(this->get_logger(), "Shutting down node: %s", node->get_name());
+                    node->trigger_transition(lifecycle_msgs::msg::Transition::TRANSITION_INACTIVE_SHUTDOWN);
+                } else {
+                    RCLCPP_WARN(this->get_logger(), "Node %s is in unexpected state %u, skipping shutdown.", 
+                                node->get_name(), current_state);
+                }
+
+                shared_executor_->remove_node(node->get_node_base_interface());
+            }
+            lifecycle_robot_nodes_.erase(team_name);
+        }
+
+        // Deactivate and remove executor lifecycle manager
+        if (lifecycle_clients_.count(team_name) > 0) {
+            auto lifecycle_client = lifecycle_clients_[team_name];
+            RCLCPP_INFO(this->get_logger(), "Shutting down LifecycleServiceClient for team: %s", team_name.c_str());
+            if (!lifecycle_client->change_state(lifecycle_msgs::msg::Transition::TRANSITION_DEACTIVATE)) {
                 RCLCPP_WARN(this->get_logger(), "Failed to deactivate LifecycleServiceClient for team: %s", team_name.c_str());
             }
-            if (!lifecycle_client->change_state(lifecycle_msgs::msg::Transition::TRANSITION_INACTIVE_SHUTDOWN))
-            {
+            if (!lifecycle_client->change_state(lifecycle_msgs::msg::Transition::TRANSITION_INACTIVE_SHUTDOWN)) {
                 RCLCPP_WARN(this->get_logger(), "Failed to shutdown LifecycleServiceClient for team: %s", team_name.c_str());
             }
             shared_executor_->remove_node(lifecycle_client);
             lifecycle_clients_.erase(team_name);
         }
 
-        // Remove robot nodes
-        if (robot_nodes_.count(team_name) > 0)
-        {
-            for (const auto &robot_node : robot_nodes_[team_name])
-            {
-                shared_executor_->remove_node(robot_node);
-            }
-            robot_nodes_.erase(team_name);
-        }
-
-        // Remove the ExecutorNode for the team
-        RCLCPP_INFO(this->get_logger(), "Removing ExecutorNode for team: %s", team_name.c_str());
-        shared_executor_->remove_node(team_nodes_[team_name]->get_node_base_interface());
+        // Remove executor node
+        auto executor_node = team_nodes_[team_name];
+        RCLCPP_INFO(this->get_logger(), "Removing executor node for team: %s", team_name.c_str());
+        shared_executor_->remove_node(executor_node->get_node_base_interface());
         team_nodes_.erase(team_name);
-
-        RCLCPP_INFO(this->get_logger(), "Team %s stopped.", team_name.c_str());
     }
 
     response->success = true;
     response->message = "Teams stopped successfully.";
-    }
+}
 
-    void stopAllExecutors()
-    {
-        RCLCPP_INFO(this->get_logger(), "Stopping all teams...");
-        std::lock_guard<std::mutex> lock(thread_mutex_);
-        for (auto &team_entry : team_nodes_)
-        {
-            shared_executor_->remove_node(team_entry.second->get_node_base_interface());
+void TeamLifecycleManager::stopAllExecutors() {
+    RCLCPP_INFO(this->get_logger(), "Stopping all teams...");
+    std::lock_guard<std::mutex> lock(thread_mutex_);
+
+    // Stop lifecycle nodes
+    for (auto &team_entry : lifecycle_robot_nodes_) {
+        for (auto &node : team_entry.second) {
+            auto current_state = node->get_current_state().id();
+
+            if (current_state == lifecycle_msgs::msg::State::PRIMARY_STATE_ACTIVE) {
+                RCLCPP_INFO(this->get_logger(), "Deactivating node: %s", node->get_name());
+                node->trigger_transition(lifecycle_msgs::msg::Transition::TRANSITION_DEACTIVATE);
+            }
+
+            current_state = node->get_current_state().id();
+            if (current_state == lifecycle_msgs::msg::State::PRIMARY_STATE_INACTIVE) {
+                RCLCPP_INFO(this->get_logger(), "Shutting down node: %s", node->get_name());
+                node->trigger_transition(lifecycle_msgs::msg::Transition::TRANSITION_INACTIVE_SHUTDOWN);
+            } else {
+                RCLCPP_WARN(this->get_logger(), "Node %s is in unexpected state %u, skipping shutdown.", 
+                            node->get_name(), current_state);
+            }
+
+            shared_executor_->remove_node(node->get_node_base_interface());
         }
-        team_nodes_.clear();
-        RCLCPP_INFO(this->get_logger(), "All teams stopped.");
     }
-};
 
+    lifecycle_robot_nodes_.clear();
+
+    // Stop normal nodes
+    for (auto &team_entry : normal_robot_nodes_) {
+        for (auto &node : team_entry.second) {
+            RCLCPP_INFO(this->get_logger(), "Removing normal node: %s", node->get_name());
+            shared_executor_->remove_node(node);
+        }
+    }
+
+    normal_robot_nodes_.clear();
+
+    // Stop executor lifecycle managers
+    for (auto &team_entry : lifecycle_clients_) {
+        auto lifecycle_client = team_entry.second;
+        RCLCPP_INFO(this->get_logger(), "Shutting down LifecycleServiceClient for team: %s", team_entry.first.c_str());
+        if (!lifecycle_client->change_state(lifecycle_msgs::msg::Transition::TRANSITION_DEACTIVATE)) {
+            RCLCPP_WARN(this->get_logger(), "Failed to deactivate LifecycleServiceClient for team: %s", team_entry.first.c_str());
+        }
+        if (!lifecycle_client->change_state(lifecycle_msgs::msg::Transition::TRANSITION_INACTIVE_SHUTDOWN)) {
+            RCLCPP_WARN(this->get_logger(), "Failed to shutdown LifecycleServiceClient for team: %s", team_entry.first.c_str());
+        }
+        shared_executor_->remove_node(lifecycle_client);
+    }
+
+    lifecycle_clients_.clear();
+
+    // Stop executor nodes
+    for (auto &team_entry : team_nodes_) {
+        RCLCPP_INFO(this->get_logger(), "Removing executor node for team: %s", team_entry.first.c_str());
+        shared_executor_->remove_node(team_entry.second->get_node_base_interface());
+    }
+
+    team_nodes_.clear();
+
+    RCLCPP_INFO(this->get_logger(), "All teams stopped.");
+}
+
+std::shared_ptr<rclcpp_lifecycle::LifecycleNode> TeamLifecycleManager::createActionNode(
+    ActionTypes action_type, const std::string &robot_name, const std::string &team_name)
+{
+    switch (action_type)
+    {
+    case ActionTypes::CHANGE_SITE:
+        return std::make_shared<ChangeSiteActionNode>(robot_name, team_name);
+    case ActionTypes::LANDING:
+        return std::make_shared<LandingActionNode>(robot_name, team_name);
+    case ActionTypes::NAVIGATION_AIR:
+        return std::make_shared<NavigationAirActionNode>(robot_name, team_name);
+    case ActionTypes::NAVIGATION_WATER:
+        return std::make_shared<NavigationWaterActionNode>(robot_name, team_name);
+    case ActionTypes::OBSERVE_2R:
+        return std::make_shared<Observe2rActionNode>(robot_name, team_name);
+    case ActionTypes::OBSERVE:
+        return std::make_shared<ObserveActionNode>(robot_name, team_name);
+    case ActionTypes::SAMPLE:
+        return std::make_shared<SampleActionNode>(robot_name, team_name);
+    case ActionTypes::SWITCH_AIRWATER:
+        return std::make_shared<SwitchAirWaterActionNode>(robot_name, team_name);
+    case ActionTypes::SWITCH_WATERAIR:
+        return std::make_shared<SwitchWaterAirActionNode>(robot_name, team_name);
+    case ActionTypes::TAKEOFF:
+        return std::make_shared<TakeoffActionNode>(robot_name, team_name);
+    case ActionTypes::TRANSLATE_DATA:
+        return std::make_shared<TranslateDataActionNode>(robot_name, team_name);
+    default:
+        throw std::invalid_argument("Unsupported action type");
+    }
+}
+
+std::vector<TeamLifecycleManager::ActionTypes> TeamLifecycleManager::getAllActionTypes()
+{
+    return {
+        ActionTypes::CHANGE_SITE,
+        ActionTypes::LANDING,
+        ActionTypes::NAVIGATION_AIR,
+        ActionTypes::NAVIGATION_WATER,
+        ActionTypes::OBSERVE_2R,
+        ActionTypes::OBSERVE,
+        ActionTypes::SAMPLE,
+        ActionTypes::SWITCH_AIRWATER,
+        ActionTypes::SWITCH_WATERAIR,
+        ActionTypes::TAKEOFF,
+        ActionTypes::TRANSLATE_DATA};
+}
 
 int main(int argc, char **argv)
 {

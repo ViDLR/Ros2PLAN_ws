@@ -1,111 +1,105 @@
-#include <memory>
+#include "plansys2_testexample/translate_data_action_node.hpp"
 #include <algorithm>
-
-#include "plansys2_executor/ActionExecutorClient.hpp"
-#include "rclcpp/rclcpp.hpp"
-#include "plansys2_msgs/msg/action_execution_info.hpp"
 
 using namespace std::chrono_literals;
 
-class TranslateDataAction : public plansys2::ActionExecutorClient
+TranslateDataActionNode::TranslateDataActionNode(const std::string &robot_name, const std::string &team_name)
+: plansys2::ActionExecutorClient(
+      "transalte_data_action_node_" + robot_name,  // Node name
+      team_name,                                // Namespace
+      1s),                                      // Execution rate
+  robot_name_(robot_name),
+  action_in_progress_(false)
 {
-public:
-  TranslateDataAction()
-  : plansys2::ActionExecutorClient("translate_data", 1s), action_in_progress_(false)
-  {
-    this->get_parameter("specialized_arguments", specialized_arguments_);
-    
-    robot_id_ = specialized_arguments_[0];
-    std::string info_topic = "/simulation_info_" + robot_id_;
-    std::string result_topic = "/simulation_result_" + robot_id_;
 
-    this->publisher_ = this->create_publisher<plansys2_msgs::msg::ActionExecutionInfo>(info_topic, 10);
-    this->subscription_ = this->create_subscription<plansys2_msgs::msg::ActionExecutionInfo>(
-        result_topic, 10, std::bind(&TranslateDataAction::result_callback, this, std::placeholders::_1));
-  }
-
-private:
-  void do_work() override
-  {
-    if (!action_in_progress_) {
-      plansys2_msgs::msg::ActionExecutionInfo msg;
-      current_poi1_ = current_arguments_[1];
-      current_site1_ = current_arguments_[2];
-      msg.action_full_name = action_managed_ + current_poi1_;
-      msg.start_stamp = this->get_clock()->now();
-      msg.status_stamp = this->get_clock()->now();
-      msg.status = plansys2_msgs::msg::ActionExecutionInfo::EXECUTING;
-      msg.action = action_managed_ + robot_id_;
-      msg.completion = 0.0;
-      msg.message_status = ""; // if we give the message of failure it will be here
-
-      publisher_->publish(msg);
-      action_in_progress_ = true;
-      current_action_id_ = action_managed_ + robot_id_;
-      RCLCPP_INFO(this->get_logger(), "Sending translate_data request with action ID: %s and robot ID: %s", current_action_id_.c_str(), robot_id_.c_str());
-    }
-  }
-
-  void result_callback(const plansys2_msgs::msg::ActionExecutionInfo::SharedPtr msg)
-  {
-    if (msg->action == current_action_id_) {
-      float progress = msg->completion;
-      int8_t status = msg->status;
-      std::string msgstatus = msg-> message_status;
-      if (status == plansys2_msgs::msg::ActionExecutionInfo::FAILED) {
-        finish(false, 0.0, "Navigation failed for" + msgstatus);
-        action_in_progress_ = false;
-        } else if (status == plansys2_msgs::msg::ActionExecutionInfo::SUCCEEDED){
-        finish(true, 1.0, "Navigation completed");
-        action_in_progress_ = false;
-        } else if (status == plansys2_msgs::msg::ActionExecutionInfo::EXECUTING){
-          if (msgstatus[0] == '1'){
-          // The action is delayed but we continue
-          send_feedback(progress, "Navigation running based on simulation feedback with a DELAY");
-          } else {
-          send_feedback(progress, "Navigation running based on simulation feedback");
-          }
-        }
-    }
-  }
-
-  bool action_in_progress_;
-  std::string current_action_id_;
-  std::string robot_id_;
-  std::string current_poi1_;
-  std::string current_site1_;
-  std::vector<std::string> specialized_arguments_;
-  rclcpp::Publisher<plansys2_msgs::msg::ActionExecutionInfo>::SharedPtr publisher_;
-  rclcpp::Subscription<plansys2_msgs::msg::ActionExecutionInfo>::SharedPtr subscription_;
-
-  CallbackReturn on_deactivate(const rclcpp_lifecycle::State & state) override
-  {
-    if (action_in_progress_) {
-      plansys2_msgs::msg::ActionExecutionInfo msg;
-      msg.action_full_name = action_managed_ + current_poi1_;
-      msg.status = plansys2_msgs::msg::ActionExecutionInfo::CANCELLED;
-      msg.action = action_managed_ + robot_id_;
-      msg.completion = 0.0;
-      msg.message_status = ""; // if we give the message of failure it will be here
-      publisher_->publish(msg);
-      action_in_progress_ = false;
-      RCLCPP_INFO(this->get_logger(), "Action translate_data with ID: %s and robot ID: %s cancelled", current_action_id_.c_str(), robot_id_.c_str());
-    }
-    return ActionExecutorClient::on_deactivate(state);
-  }
-};
-
-int main(int argc, char **argv)
-{
-  rclcpp::init(argc, argv);
-  auto node = std::make_shared<TranslateDataAction>();
-
-  node->set_parameter(rclcpp::Parameter("action_name", "translate_data"));
-  node->trigger_transition(lifecycle_msgs::msg::Transition::TRANSITION_CONFIGURE);
-
-  rclcpp::spin(node->get_node_base_interface());
-
-  rclcpp::shutdown();
-
-  return 0;
+  // Declare parameters
+  declare_parameter<std::string>("robot_name", robot_name_);
+  declare_parameter<std::string>("team_name", team_name);
 }
+
+CallbackReturnT TranslateDataActionNode::on_configure(const rclcpp_lifecycle::State & state)
+{
+  // Call base class on_configure
+  auto base_result = ActionExecutorClient::on_configure(state);
+  if (base_result != CallbackReturnT::SUCCESS) {
+    RCLCPP_ERROR(this->get_logger(), "Base ActionExecutorClient::on_configure failed!");
+    return base_result;  // Propagate failure
+  }
+
+  std::string info_topic = "/simulation_info_" + robot_name_;
+  std::string result_topic = "/simulation_result_" + robot_name_;
+
+  publisher_ = this->create_publisher<plansys2_msgs::msg::ActionExecutionInfo>(info_topic, 10);
+  subscription_ = this->create_subscription<plansys2_msgs::msg::ActionExecutionInfo>(
+      result_topic, 10, std::bind(&TranslateDataActionNode::result_callback, this, std::placeholders::_1));
+
+  return CallbackReturnT::SUCCESS;
+}
+
+void TranslateDataActionNode::do_work()
+{
+  if (!action_in_progress_) {
+    plansys2_msgs::msg::ActionExecutionInfo msg;
+    current_poi1_ = current_arguments_[1];
+    current_site1_ = current_arguments_[2];
+    msg.action_full_name = action_managed_ + " " + current_poi1_;
+    msg.start_stamp = this->get_clock()->now();
+    msg.status_stamp = this->get_clock()->now();
+    msg.status = plansys2_msgs::msg::ActionExecutionInfo::EXECUTING;
+    msg.action = action_managed_ + robot_name_;
+    msg.completion = 0.0;
+    msg.message_status = ""; // if we give the message of failure it will be here
+  
+    publisher_->publish(msg);
+    action_in_progress_ = true;
+    current_action_id_ = action_managed_ + robot_name_;
+    RCLCPP_INFO(this->get_logger(), "Sending translating data request with action ID: %s and robot ID: %s", current_action_id_.c_str(), robot_name_.c_str());
+  }
+}
+
+void TranslateDataActionNode::result_callback(const plansys2_msgs::msg::ActionExecutionInfo::SharedPtr msg)
+{
+  if (msg->action == current_action_id_) {
+    float progress = msg->completion;
+    int8_t status = msg->status;
+    std::string msgstatus = msg->message_status;
+    if (status == plansys2_msgs::msg::ActionExecutionInfo::FAILED) {
+      finish(false, 0.0, "Translating data failed for" + msgstatus);
+      action_in_progress_ = false;
+    } else if (status == plansys2_msgs::msg::ActionExecutionInfo::SUCCEEDED) {
+      finish(true, 1.0, "Translating data completed");
+      action_in_progress_ = false;
+    } else if (status == plansys2_msgs::msg::ActionExecutionInfo::EXECUTING) {
+      if (msgstatus[0] == '1') {
+        // The action is delayed but we continue
+        send_feedback(progress, "Translating data running based on simulation feedback with a DELAY");
+      } else {
+        send_feedback(progress, "Translating data running based on simulation feedback");
+      }
+    }
+  }
+}
+
+CallbackReturnT TranslateDataActionNode::on_deactivate(const rclcpp_lifecycle::State & state)
+{
+  // Call base class on_configure
+  auto base_result = ActionExecutorClient::on_deactivate(state);
+  if (base_result != CallbackReturnT::SUCCESS) {
+    RCLCPP_ERROR(this->get_logger(), "Base ActionExecutorClient::on_configure failed!");
+    return base_result;  // Propagate failure
+  }
+  if (action_in_progress_) {
+    plansys2_msgs::msg::ActionExecutionInfo msg;
+    msg.action_full_name = action_managed_ + " " + current_poi1_;
+    msg.status = plansys2_msgs::msg::ActionExecutionInfo::CANCELLED;
+    msg.action = action_managed_ + robot_name_;
+    msg.completion = 0.0;
+    msg.message_status = ""; // if we give the message of failure it will be here
+
+    publisher_->publish(msg);
+    action_in_progress_ = false;
+    RCLCPP_INFO(this->get_logger(), "Action Translating_data with ID: %s and robot ID: %s cancelled", current_action_id_.c_str(), robot_name_.c_str());
+  }
+  return ActionExecutorClient::on_deactivate(state);
+}
+

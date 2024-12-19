@@ -25,6 +25,9 @@ site
 (airconf ?r - robot)
 (groundconf ?r - robot)
 (available ?r - robot)
+(canswitch ?r - robot)
+(canrelay ?r - robot)
+(cansample ?r - robot)
 
 ;; Poi predicates
 
@@ -35,10 +38,10 @@ site
 (air ?poi - pointofinterest)
 (ground ?poi - pointofinterest)
 (connected ?s - site)
-(explored ?poi - pointofinterest)
 (partofsite ?poi - pointofinterest ?s - site)
-(assessed ?poi - pointofinterest)
-(part_assessed ?poi - pointofinterest)
+(sampled ?poi - pointofinterest)
+(isswitchable ?poi - pointofinterest)
+(isrelay ?poi - pointofinterest)
 
 );; end Predicates ;;;;;;;;;;;;;;;;;;;;
 
@@ -47,10 +50,6 @@ site
 (distance ?poi1 ?poi2 - pointofinterest)
 
 (site_size ?s - site)
-
-(is_Morph ?r - robot)
-(is_Quad ?r - robot)
-(is_Wing ?r - robot)
 
 (energy ?r - robot)
 (recharge_rate ?r - robot)
@@ -81,6 +80,7 @@ site
 (switchcost_waterair ?r - robot)
 
 
+
 );; end Functions ;;;;;;;;;;;;;;;;;;;;
 
 ;; Actions ;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -102,7 +102,6 @@ site
         (at start (not (available ?r)))
         (at start (not (at ?r ?poi1)))
         (at end (at ?r ?poi2))
-        (at end (explored ?poi2))
         (at end (available ?r))
     )
 )
@@ -125,7 +124,6 @@ site
         (at start (not (available ?r)))
         (at start (not (at ?r ?poi1)))
         (at end (at ?r ?poi2))
-        (at end (explored ?poi2))
         (at end (available ?r))
     )
 )
@@ -234,43 +232,45 @@ site
 	)
 )
 
-; (:durative-action observe_2r
-; 	:parameters (?r1 ?r2 - robot ?poi - pointofinterest ?s - site)
-; 	:duration (= ?duration (/ (/ (site_size ?s) (speedair ?r1)) 2))
-; 	:condition (and
-; 		(at start (at ?r1 ?poi))
-; 		(at start (at_site ?r1 ?s))
-; 		(at start (at ?r2 ?poi))
-; 		(at start (at_site ?r2 ?s))
-; 		(at start (survey_poi ?poi))
-; 		(at start (partofsite ?poi ?s))
-; 		(at start (air ?poi))
-; 		(at start (available ?r1))
-; 		(at start (available ?r2))
-; 		(at start (airconf ?r1))
-; 		(at start (airconf ?r2))
-; 		; (at start (>= (energy ?r1) (+(* (observecost ?r1) 30) (*(maintainconsumption_air ?r1) 60))))
-; 		; (at start (>= (energy ?r2) (+(* (observecost ?r2) 30) (*(maintainconsumption_air ?r2) 60))))
-; 	)
-; 	:effect (and
-; 		(at start (not(available ?r1)))
-; 		(at start (not(available ?r2)))
-; 		; (at start (decrease (energy ?r1) (+(* (observecost ?r1) 30) (*(maintainconsumption_air ?r1) 60))))
-; 		; (at start (decrease (energy ?r2) (+(* (observecost ?r2) 30) (*(maintainconsumption_air ?r2) 60))))
-; 		(at end (available ?r1))
-; 		(at end (available ?r2))
-; 		(at end (observed ?s))
-; 	)
-; )
+(:durative-action observe_2r
+	:parameters (?r1 ?r2 - robot ?poi - pointofinterest ?s - site)
+	:duration (= ?duration (/ (/ (site_size ?s) (speedair ?r1)) 2))
+	:condition (and
+		(at start (at ?r1 ?poi))
+		(at start (at_site ?r1 ?s))
+		(at start (at ?r2 ?poi))
+		(at start (at_site ?r2 ?s))
+		(at start (survey_poi ?poi))
+		(at start (partofsite ?poi ?s))
+		(at start (air ?poi))
+		(at start (available ?r1))
+		(at start (available ?r2))
+		(at start (airconf ?r1))
+		(at start (airconf ?r2))
+		; (at start (>= (energy ?r1) (+(* (observecost ?r1) 30) (*(maintainconsumption_air ?r1) 60))))
+		; (at start (>= (energy ?r2) (+(* (observecost ?r2) 30) (*(maintainconsumption_air ?r2) 60))))
+	)
+	:effect (and
+		(at start (not(available ?r1)))
+		(at start (not(available ?r2)))
+		; (at start (decrease (energy ?r1) (+(* (observecost ?r1) 30) (*(maintainconsumption_air ?r1) 60))))
+		; (at start (decrease (energy ?r2) (+(* (observecost ?r2) 30) (*(maintainconsumption_air ?r2) 60))))
+		(at end (available ?r1))
+		(at end (available ?r2))
+		(at end (observed ?s))
+	)
+)
 
 (:durative-action switch_waterair
 	:parameters (?r - robot ?poi - pointofinterest)
 	:duration ( = ?duration (switchduration_waterair ?r))
 	:condition (and
-		(at start(available ?r))
+		(at start (available ?r))
+		(over all (canswitch ?r))
+		(at start (waterconf ?r))
 		(over all (at ?r ?poi))
 		(over all (transition_poi ?poi))
-		(at start (waterconf ?r))
+		(over all (isswitchable ?poi))
 		(over all (water ?poi))
 		(over all (air ?poi))
 		; (at start (>= (energy ?r) (switchcost_waterair ?r)))
@@ -289,10 +289,12 @@ site
 	:duration ( = ?duration (switchduration_airwater ?r))
 	:condition (and
 		(at start(available ?r))
+		(over all (canswitch ?r))
+		(at start (airconf ?r))
 		(over all (at ?r ?poi))
 		(over all (observed ?s))
 		(over all (transition_poi ?poi))
-		(at start (airconf ?r))
+		(over all (isswitchable ?poi))
 		(over all (air ?poi))
 		(over all (water ?poi))
 		; (at start (>= (energy ?r) (switchcost_airwater ?r)))
@@ -450,12 +452,14 @@ site
 	:parameters (?r - robot ?poi - pointofinterest ?s - site)
 	:duration ( = ?duration 45)
 	:condition (and
-		(at start (at ?r ?poi))
-		(at start (transition_poi ?poi))
-		(at start (partofsite ?poi ?s))
+		(over all (at ?r ?poi))
+		(over all (transition_poi ?poi))
+		(over all (partofsite ?poi ?s))
 		(over all (observed ?s))
+		(over all (isrelay ?poi))
 		(at start (available ?r))
-		(at start (waterconf ?r))
+		(over all (waterconf ?r))
+		(over all (canrelay ?r))
 		; (at start (>= (energy ?r) (* (maintainconsumption_water ?r) 45) ))
 	)
 	:effect (and
@@ -467,63 +471,27 @@ site
 	)
 )
 
-
-; (:durative-action part_assess
-; 	:parameters (?r - robot ?poi1 - pointofinterest ?s - site)
-; 	:duration ( = ?duration 15)
-; 	:condition (and
-; 		(at start (at ?r ?poi1))
-; 		(at start (transition_poi ?poi1))
-; 		(at start (air ?poi1))
-; 		(at start (available ?r))
-; 		(at start (airconf ?r))
-; 		(at start (partofsite ?poi1 ?s))
-		
-; 		; (at start (>= (energy ?r) (+(* (partassesscost ?r) 30) (*(maintainconsumption_air ?r) 30))))
-; 	)
-; 	:effect (and
-; 		(at start (not(available ?r)))
-; 		; (at start (decrease (energy ?r) (+(* (partassesscost ?r) 30) (*(maintainconsumption_air ?r) 30))))
-; 		(at end (available ?r))
-; 		(at end (part_assessed ?poi1))
-; 	)
-; )
-
 (:durative-action sample
 	:parameters (?r - robot ?poi - pointofinterest ?s - site)
 	:duration ( = ?duration 30)
 	:condition (and
-		(at start (at ?r ?poi))
+		(over all (at ?r ?poi))
 		(at start (available ?r))
-		(at start (waterconf ?r))
-		(at start (water ?poi))
-		(at start (sample_poi ?poi))
-		(at start (partofsite ?poi ?s))
-		(at start (connected ?s))
+		(over all (cansample ?r))
+		(over all (waterconf ?r))
+		(over all (water ?poi))
+		(over all (sample_poi ?poi))
+		(over all (partofsite ?poi ?s))
+		(over all (connected ?s))
 		; (at start (>= (energy ?r) (+(* (assesscost ?r) 60) (*(maintainconsumption_water ?r) 60)) ))
 	)
 	:effect (and
 		(at start (not(available ?r)))
 		; (at start (decrease (energy ?r) (+(* (assesscost ?r) 60) (*(maintainconsumption_water ?r) 60))))
 		(at end (available ?r))
-		(at end (assessed ?poi))
+		(at end (sampled ?poi))
 	)
 )
-
-; (:durative-action wait
-; 	:parameters (?r - robot)
-; 	:duration ( = ?duration 30)
-; 	:condition (and
-; 		(at start (available ?r))
-; 		; (at start (>= (energy ?r) (*(maintainconsumption_water ?r) 60)) )
-; 	)
-; 	:effect (and
-; 		(at start (not(available ?r)))
-; 		; (at start (decrease (energy ?r) (*(maintainconsumption_water ?r) 60)))
-; 		(at end (available ?r))
-; 	)
-; )
-
 
 (:durative-action change_site
 	:parameters (?r - robot ?s1 ?s2 - site ?poi1 ?poi2 - pointofinterest)
@@ -531,11 +499,10 @@ site
 	:condition (and
 		(at start (at_site ?r ?s1))
 		(at start (at ?r ?poi1))
-		(at start (air ?poi1))
-		(at start (air ?poi2))
-		(at start (partofsite ?poi1 ?s1))
-		(at start (partofsite ?poi2 ?s2))
-
+		(over all (air ?poi1))
+		(over all (air ?poi2))
+		(over all (partofsite ?poi1 ?s1))
+		(over all (partofsite ?poi2 ?s2))
 		(at start (available ?r))
 		(over all (airconf ?r))
 		; (at start (>= (energy ?r) (* (distance ?poi1 ?poi2)(navconsumption_air ?r))))

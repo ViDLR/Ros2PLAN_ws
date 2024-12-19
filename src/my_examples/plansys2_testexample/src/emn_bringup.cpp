@@ -57,8 +57,8 @@ int main(int argc, char ** argv)
 
   if (!startup_future.get()) {
     RCLCPP_ERROR(
-      rclcpp::get_logger("plansys2_bringup"),
-      "Failed to start plansys2!");
+      rclcpp::get_logger("emn_bringup"),
+      "Failed to start Execution Manager Node!");
     rclcpp::shutdown();
     return -1;
   }

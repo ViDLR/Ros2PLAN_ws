@@ -1,5 +1,5 @@
-#ifndef CHANGE_SITE_ACTION_NODE_HPP_
-#define CHANGE_SITE_ACTION_NODE_HPP_
+#ifndef LANDING_ACTION_NODE_HPP_
+#define LANDING_ACTION_NODE_HPP_
 
 #include <memory>
 #include <vector>
@@ -11,10 +11,10 @@
 using CallbackReturnT =
   rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn;
 
-class ChangeSiteActionNode : public plansys2::ActionExecutorClient
+class LandingActionNode : public plansys2::ActionExecutorClient
 {
 public:
-  ChangeSiteActionNode(const std::string &robot_name, const std::string &team_name);
+  LandingActionNode(const std::string &robot_name, const std::string &team_name);
 
 private:
   void do_work() override;
@@ -22,18 +22,14 @@ private:
   CallbackReturnT on_deactivate(const rclcpp_lifecycle::State & state) override;
   CallbackReturnT on_configure(const rclcpp_lifecycle::State & state) override;
 
-
   bool action_in_progress_;
   std::string current_action_id_;
   std::string robot_name_;
   std::string current_poi1_;
-  std::string current_poi2_;
   std::string current_site1_;
-  std::string current_site2_;
   std::vector<std::string> specialized_arguments_;
   rclcpp::Publisher<plansys2_msgs::msg::ActionExecutionInfo>::SharedPtr publisher_;
   rclcpp::Subscription<plansys2_msgs::msg::ActionExecutionInfo>::SharedPtr subscription_;
 };
 
-#endif  // CHANGE_SITE_ACTION_NODE_
-
+#endif  // LANDING_ACTION_NODE_

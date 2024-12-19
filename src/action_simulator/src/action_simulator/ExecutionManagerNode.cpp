@@ -2,6 +2,10 @@
 
 namespace action_simulator {
 
+using namespace std::chrono_literals;
+using StartTeams = plansys2_msgs::srv::StartTeams;
+using StopTeams = plansys2_msgs::srv::StopTeams;
+
 ExecutionManagerNode::ExecutionManagerNode(): rclcpp_lifecycle::LifecycleNode("execution_manager_node") {}
 
 
@@ -32,6 +36,16 @@ ExecutionManagerNode::on_configure(const rclcpp_lifecycle::State &)
 
     problem_client_->addProblem(problem_str);
 
+    RCLCPP_INFO(this->get_logger(), "ExecutionManagerNode configured successfully.");
+    return CallbackReturn::SUCCESS;
+}
+
+
+
+CallbackReturnT
+ExecutionManagerNode::on_activate(const rclcpp_lifecycle::State & )
+{
+    RCLCPP_INFO(this->get_logger(), "Activating ExecutionManagerNode...");
     // Fetch and analyze plan
     auto domain = domain_client_->getDomain();
     // RCLCPP_INFO(this->get_logger(), "Fetched domain: %s", domain.c_str());
@@ -51,17 +65,42 @@ ExecutionManagerNode::on_configure(const rclcpp_lifecycle::State &)
     // analyze_plan(plan.value());
     // setup_team_topics();
 
-    RCLCPP_INFO(this->get_logger(), "ExecutionManagerNode configured successfully.");
-    return CallbackReturn::SUCCESS;
-}
+    // Simulated output of analyze_plan (Team and robot repartition)
+    std::vector<plansys2_msgs::msg::Team> teams;
 
+    plansys2_msgs::msg::Team team1;
+    team1.name = "team1";
+    team1.robots = {"robot1", "robot2"};
+    teams.push_back(team1);
 
+    plansys2_msgs::msg::Team team2;
+    team2.name = "team2";
+    team2.robots = {"robot3", "robot4"};
+    teams.push_back(team2);
 
-CallbackReturnT
-ExecutionManagerNode::on_activate(const rclcpp_lifecycle::State & )
-{
-    RCLCPP_INFO(this->get_logger(), "Activating ExecutionManagerNode...");
-    // start_execution();
+    // Call the /start_teams service
+    auto start_teams_client = this->create_client<StartTeams>("/start_teams");
+
+    if (!start_teams_client->wait_for_service(5s)) {
+        RCLCPP_ERROR(get_logger(), "/start_teams service not available");
+        return CallbackReturnT::FAILURE;
+    }
+
+    auto request = std::make_shared<StartTeams::Request>();
+    request->teams = teams;
+
+    auto future = start_teams_client->async_send_request(request);
+    if (rclcpp::spin_until_future_complete(this->get_node_base_interface(), future) !=
+        rclcpp::FutureReturnCode::SUCCESS) {
+        RCLCPP_ERROR(get_logger(), "Failed to call /start_teams service");
+        return CallbackReturnT::FAILURE;
+    }
+
+    auto response = future.get();
+    if (!response->success) {
+        RCLCPP_ERROR(get_logger(), "Failed to start teams: %s", response->message.c_str());
+    return CallbackReturnT::FAILURE;
+    }
     return CallbackReturn::SUCCESS;
 }
 
@@ -193,19 +232,19 @@ void ExecutionManagerNode::start_execution()
 
   RCLCPP_INFO(this->get_logger(), "Plan obtained with %lu actions.", plan->items.size());
 
-  create_and_launch_teams();
+//   create_and_launch_teams();
 }
 
-void ExecutionManagerNode::create_and_launch_teams()
-{
-  RCLCPP_INFO(this->get_logger(), "Simulating team creation and launching robots...");
-  // Add logic here for team creation based on analysis
-  // Simulate team creation based on plan analysis
-  // std::unordered_map<std::string, std::vector<std::string>> teams = {
-  //     {"team1", {"robot0", "robot1"}},
-  //     {"team2", {"robot2", "robot3"}}
-  // };
-}
+// void ExecutionManagerNode::create_and_launch_teams()
+// {
+//   RCLCPP_INFO(this->get_logger(), "Simulating team creation and launching robots...");
+//   // Add logic here for team creation based on analysis
+//   // Simulate team creation based on plan analysis
+//   // std::unordered_map<std::string, std::vector<std::string>> teams = {
+//   //     {"team1", {"robot0", "robot1"}},
+//   //     {"team2", {"robot2", "robot3"}}
+//   // };
+// }
 
 // void ExecutionManagerNode::stop_executors_and_robots()
 // {
@@ -244,3 +283,6 @@ void ExecutionManagerNode::create_and_launch_teams()
 // }
 
 }  // namespace action_simulator
+
+
+// RCLCPP_COMPONENTS_REGISTER_NODE(action_simulator::ExecutionManagerNode)

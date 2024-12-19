@@ -1,23 +1,43 @@
-#include "chang_site_action.hpp"
+#include "plansys2_testexample/change_site_action_node.hpp"
 #include <algorithm>
 
 using namespace std::chrono_literals;
 
-ChangSiteAction::ChangSiteAction()
-: plansys2::ActionExecutorClient("change_site", 1s), action_in_progress_(false)
+ChangeSiteActionNode::ChangeSiteActionNode(const std::string &robot_name, const std::string &team_name)
+: plansys2::ActionExecutorClient(
+      "change_site_action_node_" + robot_name,  // Node name
+      team_name,                                // Namespace
+      1s),                                      // Execution rate
+  robot_name_(robot_name),
+  action_in_progress_(false)
 {
-  this->get_parameter("specialized_arguments", specialized_arguments_);
-  
-  robot_id_ = specialized_arguments_[0];
-  std::string info_topic = "/simulation_info_" + robot_id_;
-  std::string result_topic = "/simulation_result_" + robot_id_;
-
-  this->publisher_ = this->create_publisher<plansys2_msgs::msg::ActionExecutionInfo>(info_topic, 10);
-  this->subscription_ = this->create_subscription<plansys2_msgs::msg::ActionExecutionInfo>(
-      result_topic, 10, std::bind(&ChangSiteAction::result_callback, this, std::placeholders::_1));
+  // Declare parameters
+  declare_parameter<std::string>("robot_name", robot_name_);
+  declare_parameter<std::string>("team_name", team_name);
 }
 
-void ChangSiteAction::do_work()
+CallbackReturnT ChangeSiteActionNode::on_configure(const rclcpp_lifecycle::State & state)
+{
+  // Call base class on_configure
+  auto base_result = ActionExecutorClient::on_configure(state);
+  if (base_result != CallbackReturnT::SUCCESS) {
+    RCLCPP_ERROR(this->get_logger(), "Base ActionExecutorClient::on_configure failed!");
+    return base_result;  // Propagate failure
+  }
+
+  std::string info_topic = "/simulation_info_" + robot_name_;
+  std::string result_topic = "/simulation_result_" + robot_name_;
+
+  publisher_ = this->create_publisher<plansys2_msgs::msg::ActionExecutionInfo>(info_topic, 10);
+  subscription_ = this->create_subscription<plansys2_msgs::msg::ActionExecutionInfo>(
+      result_topic, 10, std::bind(&ChangeSiteActionNode::result_callback, this, std::placeholders::_1));
+
+  return CallbackReturnT::SUCCESS;
+}
+
+
+
+void ChangeSiteActionNode::do_work()
 {
   if (!action_in_progress_) {
     plansys2_msgs::msg::ActionExecutionInfo msg;
@@ -29,18 +49,18 @@ void ChangSiteAction::do_work()
     msg.start_stamp = this->get_clock()->now();
     msg.status_stamp = this->get_clock()->now();
     msg.status = plansys2_msgs::msg::ActionExecutionInfo::EXECUTING;
-    msg.action = action_managed_ + robot_id_;
+    msg.action = action_managed_ + robot_name_;
     msg.completion = 0.0;
     msg.message_status = ""; // if we give the message of failure it will be here
 
     publisher_->publish(msg);
     action_in_progress_ = true;
-    current_action_id_ = action_managed_ + robot_id_;
-    RCLCPP_INFO(this->get_logger(), "Sending change_site request with action ID: %s and robot ID: %s", current_action_id_.c_str(), robot_id_.c_str());
+    current_action_id_ = action_managed_ + robot_name_;
+    RCLCPP_INFO(this->get_logger(), "Sending change_site request with action ID: %s and robot ID: %s", current_action_id_.c_str(), robot_name_.c_str());
   }
 }
 
-void ChangSiteAction::result_callback(const plansys2_msgs::msg::ActionExecutionInfo::SharedPtr msg)
+void ChangeSiteActionNode::result_callback(const plansys2_msgs::msg::ActionExecutionInfo::SharedPtr msg)
 {
   if (msg->action == current_action_id_) {
     float progress = msg->completion;
@@ -63,8 +83,14 @@ void ChangSiteAction::result_callback(const plansys2_msgs::msg::ActionExecutionI
   }
 }
 
-CallbackReturn ChangSiteAction::on_deactivate(const rclcpp_lifecycle::State & state)
+CallbackReturnT ChangeSiteActionNode::on_deactivate(const rclcpp_lifecycle::State & state)
 {
+  // Call base class on_configure
+  auto base_result = ActionExecutorClient::on_deactivate(state);
+  if (base_result != CallbackReturnT::SUCCESS) {
+    RCLCPP_ERROR(this->get_logger(), "Base ActionExecutorClient::on_configure failed!");
+    return base_result;  // Propagate failure
+  }
   if (action_in_progress_) {
     plansys2_msgs::msg::ActionExecutionInfo msg;
     msg.action_full_name = action_managed_ + " " + current_site1_ + " " + current_site2_ + " " + current_poi1_ + " " + current_site1_;
@@ -74,7 +100,7 @@ CallbackReturn ChangSiteAction::on_deactivate(const rclcpp_lifecycle::State & st
     msg.message_status = "";
     publisher_->publish(msg);
     action_in_progress_ = false;
-    RCLCPP_INFO(this->get_logger(), "Action Change_Site with ID: %s and robot ID: %s cancelled", current_action_id_.c_str(), robot_id_.c_str());
+    RCLCPP_INFO(this->get_logger(), "Action Change_Site with ID: %s and robot ID: %s cancelled", current_action_id_.c_str(), robot_name_.c_str());
   }
   return ActionExecutorClient::on_deactivate(state);
 }

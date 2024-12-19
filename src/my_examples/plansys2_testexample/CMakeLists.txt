@@ -50,7 +50,6 @@ ament_target_dependencies(team_lifecycle_manager_node ${dependencies})
 target_compile_definitions(team_lifecycle_manager_node PUBLIC "PLUGINLIB__DISABLE_BOOST_FUNCTIONS")
 target_link_libraries(team_lifecycle_manager_node action_nodes)
 
-
 # Install headers
 install(DIRECTORY include/
   DESTINATION include/

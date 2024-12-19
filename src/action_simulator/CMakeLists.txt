@@ -11,6 +11,7 @@ endif()
 # Find dependencies
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
+find_package(rclcpp_components REQUIRED)
 find_package(plansys2_msgs REQUIRED)
 find_package(plansys2_domain_expert REQUIRED)
 find_package(plansys2_problem_expert REQUIRED)
@@ -22,6 +23,7 @@ find_package(plansys2_executor REQUIRED)
 
 set(dependencies
   rclcpp
+  rclcpp_components
   plansys2_msgs
   lifecycle_msgs
   plansys2_domain_expert
@@ -37,6 +39,7 @@ include_directories(include)
 # Source files
 set(SOURCES
   src/action_simulator/ExecutionManagerNode.cpp
+  src/action_simulator_node.cpp
 )
 
 # Create shared library
@@ -50,6 +53,7 @@ ament_target_dependencies(execution_manager_node ${dependencies})
 target_compile_definitions(execution_manager_node PUBLIC "PLUGINLIB__DISABLE_BOOST_FUNCTIONS")
 target_link_libraries(execution_manager_node ${PROJECT_NAME})
 
+# rclcpp_components_register_node(${PROJECT_NAME} PLUGIN "action_simulator::ExecutionManagerNode" EXECUTABLE execution_manager_node)
 # Install headers
 install(DIRECTORY include/
   DESTINATION include/

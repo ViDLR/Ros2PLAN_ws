@@ -18,21 +18,33 @@ cpbase cpsite1 pp1 pp2 sp1 sp2 - pointofinterest
 (at_site robot0 base)
 (groundconf robot0)
 (available robot0)
+(canswitch robot0)
+(canrelay robot0)
+(cansample robot0)
 
 (at robot1 cpbase)
 (at_site robot1 base)
 (groundconf robot1)
 (available robot1)
+(canswitch robot1)
+(canrelay robot1)
+(cansample robot1)
 
 (at robot2 cpbase)
 (at_site robot2 base)
 (groundconf robot2)
 (available robot2)
+(canswitch robot2)
+(canrelay robot2)
+(cansample robot2)
 
 (at robot3 cpbase)
 (at_site robot3 base)
 (groundconf robot3)
 (available robot3)
+(canswitch robot3)
+(canrelay robot3)
+(cansample robot3)
 
 
 ; Poi/Sites states
@@ -61,11 +73,15 @@ cpbase cpsite1 pp1 pp2 sp1 sp2 - pointofinterest
 (water sp1)
 (air sp1)
 (partofsite sp1 site1)
+(isswitchable sp1)
+(isrelay sp1)
 
 (transition_poi sp2)
 (water sp2)
 (air sp2)
 (partofsite sp2 site1)
+(isswitchable sp1)
+(isrelay sp1)
 
 
 ;Functions
@@ -215,8 +231,8 @@ cpbase cpsite1 pp1 pp2 sp1 sp2 - pointofinterest
 
 )
 (:goal (and
-(assessed pp1)
-(assessed pp2)
+(sampled pp1)
+(sampled pp2)
 )
 )
 )

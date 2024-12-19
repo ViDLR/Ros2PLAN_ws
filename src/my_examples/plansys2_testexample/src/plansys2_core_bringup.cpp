@@ -66,7 +66,7 @@ int main(int argc, char ** argv)
   if (!startup_future.get()) {
     RCLCPP_ERROR(
       rclcpp::get_logger("plansys2_core_bringup"),
-      "Failed to start plansys2!");
+      "Failed to start plansys2 core!");
     rclcpp::shutdown();
     return -1;
   }

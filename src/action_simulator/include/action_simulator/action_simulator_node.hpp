@@ -20,9 +20,11 @@ private:
     void publish_knowledge_update();
     std::string determine_failure_type();
 
+    // Member variables
     std::string current_action_;
     std::string current_action_id_;
     std::string robot_id_;
+    std::string team_name_;  // Added this missing declaration
     std::string current_poi_;
     std::string failure_status_;
     std::string failure_type_;
@@ -43,4 +45,3 @@ private:
 };
 
 #endif  // SIMULATION_NODE_HPP_
-

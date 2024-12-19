@@ -4,11 +4,19 @@
 using namespace std::literals::chrono_literals;
 
 SimulationNode::SimulationNode(const std::string &robot_id, const std::string &team_name)
-: Node("simulation_node", team_name),  // Directly pass the namespace to the Node constructor
+: Node("simulation_node_" + robot_id, team_name),  // Pass namespace to the Node constructor
   robot_id_(robot_id),
   current_progress_(0.0),
   action_active_(false)
 {
+    // Explicitly declare parameters
+    this->declare_parameter<std::string>("robot_id", robot_id);
+    this->declare_parameter<std::string>("team_name", team_name);
+
+    // Fetch the parameters to ensure they're set correctly
+    this->get_parameter("robot_id", robot_id_);
+    this->get_parameter("team_name", team_name_);
+
     std::string info_topic = "/simulation_info_" + robot_id_;
     std::string result_topic = "/simulation_result_" + robot_id_;
 
@@ -27,8 +35,9 @@ SimulationNode::SimulationNode(const std::string &robot_id, const std::string &t
     dist_ = std::uniform_real_distribution<>(0.0, 1.0);
     failure_type_dist_ = std::uniform_int_distribution<>(1, 3);
 
-    RCLCPP_INFO(this->get_logger(), "SimulationNode created for robot: %s in team: %s", robot_id_.c_str(), team_name.c_str());
+    RCLCPP_INFO(this->get_logger(), "SimulationNode created for robot: %s in team: %s", robot_id_.c_str(), team_name_.c_str());
 }
+
 
 std::string SimulationNode::determine_failure_type()
 {

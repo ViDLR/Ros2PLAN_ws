@@ -11,6 +11,9 @@
 #include "plansys2_planner/PlannerClient.hpp"
 
 #include "lifecycle_msgs/srv/get_state.hpp"
+#include "plansys2_msgs/msg/team.hpp"
+#include "plansys2_msgs/srv/start_teams.hpp"
+#include "plansys2_msgs/srv/stop_teams.hpp"
 
 #include <chrono>
 #include <memory>
