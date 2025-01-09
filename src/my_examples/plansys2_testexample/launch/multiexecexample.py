@@ -89,13 +89,35 @@ def generate_launch_description():
         ]
     )
     
-    # Execution Manager Node with Delayed Startup
+    # # Execution Manager Node with Delayed Startup
+    # execution_manager_node_cmd = TimerAction(
+    #     period=5.0,  # Delay of 5 seconds
+    #     actions=[
+    #         Node(
+    #             package='plansys2_testexample',
+    #             executable='emn_bringup',
+    #             output='screen',
+    #             parameters=[
+    #                 {
+    #                     'model_file': LaunchConfiguration('model_file'),
+    #                     'default_action_bt_xml_filename': LaunchConfiguration('action_bt_file'),
+    #                     'default_start_action_bt_xml_filename': LaunchConfiguration('start_action_bt_file'),
+    #                     'default_end_action_bt_xml_filename': LaunchConfiguration('end_action_bt_file'),
+    #                     'bt_builder_plugin': LaunchConfiguration('bt_builder_plugin'),
+    #                 },
+    #                 LaunchConfiguration('params_file')
+    #             ]
+    #         )
+    #     ]
+    # )
+
+
     execution_manager_node_cmd = TimerAction(
         period=5.0,  # Delay of 5 seconds
         actions=[
             Node(
-                package='plansys2_testexample',
-                executable='emn_bringup',
+                package='action_simulator',
+                executable='execution_manager_node',
                 output='screen',
                 parameters=[
                     {

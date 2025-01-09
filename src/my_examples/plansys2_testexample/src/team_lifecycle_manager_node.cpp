@@ -31,8 +31,10 @@ void TeamLifecycleManager::handleStartTeams(
     const plansys2_msgs::srv::StartTeams::Request::SharedPtr request,
     const plansys2_msgs::srv::StartTeams::Response::SharedPtr response)
 {
+
     for (const auto &team_entry : request->teams)
     {
+        RCLCPP_INFO(this->get_logger(), "StartTeams request received with %zu teams.", request->teams.size());
         const std::string &team_name = team_entry.name;
         const auto &robots = team_entry.robots; // List of robots for this team
 
@@ -101,6 +103,10 @@ void TeamLifecycleManager::handleStartTeams(
 
     response->success = true;
     response->message = "Teams started successfully.";
+    
+    RCLCPP_INFO(this->get_logger(), "Responding to StartTeams with success: %d, message: %s",
+            response->success, response->message.c_str());
+    
 }
 
 void TeamLifecycleManager::handleStopTeams(

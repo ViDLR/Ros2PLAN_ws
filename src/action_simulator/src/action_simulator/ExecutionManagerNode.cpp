@@ -4,163 +4,12 @@ namespace action_simulator {
 
 using namespace std::chrono_literals;
 using StartTeams = plansys2_msgs::srv::StartTeams;
-using StopTeams = plansys2_msgs::srv::StopTeams;
 
-ExecutionManagerNode::ExecutionManagerNode(): rclcpp_lifecycle::LifecycleNode("execution_manager_node") {}
-
-
-using CallbackReturnT =
-  rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn;
-
-
-CallbackReturnT
-ExecutionManagerNode::on_configure(const rclcpp_lifecycle::State &)
+ExecutionManagerNode::ExecutionManagerNode() : rclcpp::Node("execution_manager_node")
 {
-    RCLCPP_INFO(this->get_logger(), "Configuring ExecutionManagerNode...");
-
-    // Initialize clients
-    domain_client_ = std::make_shared<plansys2::DomainExpertClient>();
-    planner_client_ = std::make_shared<plansys2::PlannerClient>();
-    problem_client_ = std::make_shared<plansys2::ProblemExpertClient>();
-
-    
-    // Load the problem from a .pddl file
-    std::ifstream problem_file("src/my_examples/plansys2_testexample/pddl/MMtest.pddl");
-    if (!problem_file.is_open()) {
-        RCLCPP_ERROR(this->get_logger(), "Failed to open problem file.");
-        return CallbackReturn::FAILURE;
-    }
-    std::string problem_str((std::istreambuf_iterator<char>(problem_file)),
-                            std::istreambuf_iterator<char>());
-    problem_file.close();
-
-    problem_client_->addProblem(problem_str);
-
-    RCLCPP_INFO(this->get_logger(), "ExecutionManagerNode configured successfully.");
-    return CallbackReturn::SUCCESS;
+    RCLCPP_INFO(this->get_logger(), "Creating ExecutionManagerNode...");
+    ExecutionSequenceFunction();
 }
-
-
-
-CallbackReturnT
-ExecutionManagerNode::on_activate(const rclcpp_lifecycle::State & )
-{
-    RCLCPP_INFO(this->get_logger(), "Activating ExecutionManagerNode...");
-    // Fetch and analyze plan
-    auto domain = domain_client_->getDomain();
-    // RCLCPP_INFO(this->get_logger(), "Fetched domain: %s", domain.c_str());
-    auto problem = problem_client_->getProblem();
-    // RCLCPP_INFO(this->get_logger(), "Fetched problem: %s", problem.c_str());
-    auto plan = planner_client_->getPlan(domain, problem);
-
-    if (!plan.has_value()) {
-        RCLCPP_ERROR(this->get_logger(), "Failed to fetch plan.");
-        return CallbackReturn::FAILURE;
-    }
-    
-
-    RCLCPP_INFO(this->get_logger(), "Plan fetched with %lu actions.", plan->items.size());
-
-    // Analyze plan and prepare teams
-    // analyze_plan(plan.value());
-    // setup_team_topics();
-
-    // Simulated output of analyze_plan (Team and robot repartition)
-    std::vector<plansys2_msgs::msg::Team> teams;
-
-    plansys2_msgs::msg::Team team1;
-    team1.name = "team1";
-    team1.robots = {"robot1", "robot2"};
-    teams.push_back(team1);
-
-    plansys2_msgs::msg::Team team2;
-    team2.name = "team2";
-    team2.robots = {"robot3", "robot4"};
-    teams.push_back(team2);
-
-    // Call the /start_teams service
-    auto start_teams_client = this->create_client<StartTeams>("/start_teams");
-
-    if (!start_teams_client->wait_for_service(5s)) {
-        RCLCPP_ERROR(get_logger(), "/start_teams service not available");
-        return CallbackReturnT::FAILURE;
-    }
-
-    auto request = std::make_shared<StartTeams::Request>();
-    request->teams = teams;
-
-    auto future = start_teams_client->async_send_request(request);
-    if (rclcpp::spin_until_future_complete(this->get_node_base_interface(), future) !=
-        rclcpp::FutureReturnCode::SUCCESS) {
-        RCLCPP_ERROR(get_logger(), "Failed to call /start_teams service");
-        return CallbackReturnT::FAILURE;
-    }
-
-    auto response = future.get();
-    if (!response->success) {
-        RCLCPP_ERROR(get_logger(), "Failed to start teams: %s", response->message.c_str());
-    return CallbackReturnT::FAILURE;
-    }
-    return CallbackReturn::SUCCESS;
-}
-
-CallbackReturnT
-ExecutionManagerNode::on_deactivate(const rclcpp_lifecycle::State & )
-{
-    RCLCPP_INFO(this->get_logger(), "Deactivating ExecutionManagerNode...");
-    // stop_executors_and_robots();
-    return CallbackReturn::SUCCESS;
-}
-
-CallbackReturnT
-ExecutionManagerNode::on_shutdown(const rclcpp_lifecycle::State & )
-{
-    RCLCPP_INFO(this->get_logger(), "Shutting down ExecutionManagerNode...");
-    // stop_executors_and_robots();
-    // cleanup_resources();
-    return CallbackReturn::SUCCESS;
-}
-
-// void ExecutionManagerNode::wait_for_clients()
-// {
-//     const std::chrono::seconds timeout(10);
-
-//     wait_for_service_and_activation("domain_expert/get_state", "domain_expert", timeout);
-//     wait_for_service_and_activation("problem_expert/get_state", "problem_expert", timeout);
-//     wait_for_service_and_activation("planner/get_state", "planner", timeout);
-// }
-
-// void ExecutionManagerNode::wait_for_service_and_activation(
-//     const std::string &service_name, 
-//     const std::string &node_name,
-//     std::chrono::seconds timeout)
-// {
-//     RCLCPP_INFO(this->get_logger(), "Waiting for service [%s]...", service_name.c_str());
-
-//     auto client = this->create_client<lifecycle_msgs::srv::GetState>(service_name);
-//     if (!client->wait_for_service(timeout)) {
-//         throw std::runtime_error("Service " + service_name + " is not available.");
-//     }
-
-//     RCLCPP_INFO(this->get_logger(), "Service [%s] is now available.", service_name.c_str());
-
-//     // Check lifecycle state
-//     auto request = std::make_shared<lifecycle_msgs::srv::GetState::Request>();
-//     auto result = client->async_send_request(request);
-
-//     if (rclcpp::spin_until_future_complete(this->get_node_base_interface(), result) ==
-//         rclcpp::FutureReturnCode::SUCCESS)
-//     {
-//         auto state = result.get()->current_state.label;
-//         RCLCPP_INFO(this->get_logger(), "Node [%s] is currently in state: %s", node_name.c_str(), state.c_str());
-
-//         if (state != "active") {
-//             throw std::runtime_error("Node " + node_name + " is not in active state.");
-//         }
-//     } else {
-//         throw std::runtime_error("Failed to get state for node " + node_name);
-//     }
-// }
 
 void ExecutionManagerNode::setup_knowledge(const std::string &file_path)
 {
@@ -217,72 +66,226 @@ void ExecutionManagerNode::setup_knowledge(const std::string &file_path)
 }
 
 
-void ExecutionManagerNode::start_execution()
-{
-  auto domain = domain_client_->getDomain();
-  auto problem = problem_client_->getProblem();
-  auto plan = planner_client_->getPlan(domain, problem);
+// void ExecutionManagerNode::Analyze_Plan(const std::string &file_path)
+// {
+//     std::vector<plansys2_msgs::msg::Team> ExecutionManagerNode::analyzePlan() {
+//     // Placeholder logic for analyzing the plan and allocating teams
+//     std::vector<plansys2_msgs::msg::Team> teams;
 
-  if (!plan.has_value())
-  {
-    RCLCPP_ERROR(this->get_logger(), "Could not find plan to reach goal %s",
-                 parser::pddl::toString(problem_client_->getGoal()).c_str());
-    return;
-  }
+//     plansys2_msgs::msg::Team team1;
+//     team1.name = "team1";
+//     team1.robots = {"robot1", "robot2"};
+//     teams.push_back(team1);
 
-  RCLCPP_INFO(this->get_logger(), "Plan obtained with %lu actions.", plan->items.size());
+//     plansys2_msgs::msg::Team team2;
+//     team2.name = "team2";
+//     team2.robots = {"robot3", "robot4"};
+//     teams.push_back(team2);
 
-//   create_and_launch_teams();
+//     return teams;
+//     }
+// }
+
+
+// Callbackcreation and disposition 
+void ExecutionManagerNode::createExecutorCallback(const std::string &team_name) {
+    if (executor_callbacks_.count(team_name) > 0) {
+        RCLCPP_WARN(this->get_logger(), "Callback for team '%s' already exists. Skipping creation.", team_name.c_str());
+        return;
+    }
+
+    std::string topic = "/" + team_name + "/executor_status";
+
+    executor_callbacks_[team_name] = this->create_subscription<plansys2_msgs::msg::ActionExecution>(
+        topic, 10,
+        [this, team_name](const plansys2_msgs::msg::ActionExecution::SharedPtr msg) {
+            RCLCPP_INFO(this->get_logger(), "Executor status update for team '%s': %s", team_name.c_str(), msg->status.c_str());
+
+            // Logic to handle executor status updates for the specific team
+            if (msg->status == "COMPLETED") {
+                RCLCPP_INFO(this->get_logger(), "Team '%s' completed action '%s' successfully.", team_name.c_str(), msg->action.c_str());
+            } else if (msg->status == "FAILED") {
+                RCLCPP_ERROR(this->get_logger(), "Team '%s' failed action '%s'.", team_name.c_str(), msg->action.c_str());
+                // Optional: Trigger replanning or other failure management
+            }
+        });
+
+    RCLCPP_INFO(this->get_logger(), "Created callback for team '%s'.", team_name.c_str());
 }
 
-// void ExecutionManagerNode::create_and_launch_teams()
-// {
-//   RCLCPP_INFO(this->get_logger(), "Simulating team creation and launching robots...");
-//   // Add logic here for team creation based on analysis
-//   // Simulate team creation based on plan analysis
-//   // std::unordered_map<std::string, std::vector<std::string>> teams = {
-//   //     {"team1", {"robot0", "robot1"}},
-//   //     {"team2", {"robot2", "robot3"}}
-//   // };
-// }
+void ExecutionManagerNode::removeExecutorCallback(const std::string &team_name) {
+    if (executor_callbacks_.count(team_name) == 0) {
+        RCLCPP_WARN(this->get_logger(), "Callback for team '%s' does not exist. Skipping removal.", team_name.c_str());
+        return;
+    }
 
-// void ExecutionManagerNode::stop_executors_and_robots()
-// {
-//   {
-//     std::lock_guard<std::mutex> lock(thread_control_mutex_);
-//     shutdown_flag_ = true;
-//   }
-//   thread_control_cv_.notify_all();
+    executor_callbacks_.erase(team_name);
+    RCLCPP_INFO(this->get_logger(), "Removed callback for team '%s'.", team_name.c_str());
+}
 
-//   for (auto &[namespace_name, thread] : executor_threads_)
-//   {
-//     if (thread.joinable())
-//     {
-//       RCLCPP_INFO(this->get_logger(), "Joining executor thread for namespace: %s", namespace_name.c_str());
-//       thread.join();
-//     }
-//   }
-//   executor_threads_.clear();
-//   RCLCPP_INFO(this->get_logger(), "All executors and robots stopped successfully.");
-// }
+bool ExecutionManagerNode::hasExecutorCallback(const std::string &team_name) const {
+    return executor_callbacks_.count(team_name) > 0;
+}
 
-// void ExecutionManagerNode::cleanup_resources()
-// {
-//   RCLCPP_INFO(this->get_logger(), "Cleaning up resources...");
-//   domain_expert_.reset();
-//   planner_client_.reset();
-//   problem_client_.reset();
-//   executor_client_.reset();
-//   // actions_hub_sub_.reset();
-//   // stop_executors_and_robots();
-// }
+void ExecutionManagerNode::addExecutorCallbacks(const std::vector<plansys2_msgs::msg::Team> &teams) {
+    
+    for (const auto &team : teams) {
+        if (!hasExecutorCallback(team.name)) {
+            createExecutorCallback(team.name);  // Create a callback for the team
+        } else {
+            RCLCPP_INFO(this->get_logger(), "Callback for team '%s' already exists. No action taken.", team.name.c_str());
+        }
+    }
+}
 
-// void ExecutionManagerNode::actions_hub_callback(const plansys2_msgs::msg::ActionExecution::SharedPtr msg)
-// {
-//   RCLCPP_INFO(this->get_logger(), "Received action status: %s", msg->status.c_str());
-// }
+// Executor client creation and disposition 
+
+void ExecutionManagerNode::createExecutorClient(const std::string &team_name) {
+    if (executor_clients_.count(team_name) > 0) {
+        RCLCPP_WARN(this->get_logger(), "Executor client for team '%s' already exists. Skipping creation.", team_name.c_str());
+        return;
+    }
+
+    RCLCPP_INFO(this->get_logger(), "Creating executor client for team '%s'.", team_name.c_str());
+    executor_clients_[team_name] = std::make_shared<plansys2::ExecutorClient>(team_name);
+    RCLCPP_INFO(this->get_logger(), "Executor client for team '%s' created successfully.", team_name.c_str());
+}
+
+void ExecutionManagerNode::removeExecutorClient(const std::string &team_name) {
+    if (executor_clients_.count(team_name) == 0) {
+        RCLCPP_WARN(this->get_logger(), "Executor client for team '%s' does not exist. Skipping removal.", team_name.c_str());
+        return;
+    }
+
+    executor_clients_.erase(team_name);
+    RCLCPP_INFO(this->get_logger(), "Executor client for team '%s' removed successfully.", team_name.c_str());
+}
+
+bool ExecutionManagerNode::hasExecutorClient(const std::string &team_name) const {
+    return executor_clients_.count(team_name) > 0;
+}
+
+void ExecutionManagerNode::addExecutorClients(const std::vector<plansys2_msgs::msg::Team> &teams) {
+    for (const auto &team : teams) {
+        if (!hasExecutorClient(team.name)) {
+            createExecutorClient(team.name);
+        } else {
+            RCLCPP_INFO(this->get_logger(), "Executor client for team '%s' already exists. No action taken.", team.name.c_str());
+        }
+    }
+}
+
+void ExecutionManagerNode::removeExecutorClients(const std::vector<std::string> &team_names) {
+    for (const auto &team_name : team_names) {
+        removeExecutorClient(team_name);
+    }
+}
+
+
+// Main ExecutionSequenceFunction
+void ExecutionManagerNode::ExecutionSequenceFunction()
+{
+    RCLCPP_INFO(this->get_logger(), "Starting ExecutionSequenceFunction ...");
+
+    // Initialize clients
+    domain_client_ = std::make_shared<plansys2::DomainExpertClient>();
+    planner_client_ = std::make_shared<plansys2::PlannerClient>();
+    problem_client_ = std::make_shared<plansys2::ProblemExpertClient>();
+
+    // Load the problem from a .pddl file
+    std::ifstream problem_file("src/my_examples/plansys2_testexample/pddl/MMtest.pddl");
+    if (!problem_file.is_open()) {
+        RCLCPP_ERROR(this->get_logger(), "Failed to open problem file.");
+        throw std::runtime_error("Problem file load failed");
+    }
+    std::string problem_str((std::istreambuf_iterator<char>(problem_file)),
+                            std::istreambuf_iterator<char>());
+    problem_file.close();
+
+    problem_client_->addProblem(problem_str);
+
+    RCLCPP_INFO(this->get_logger(), "Activating ExecutionManagerNode...");
+
+    // Fetch and analyze the plan
+    auto domain = domain_client_->getDomain();
+    auto problem = problem_client_->getProblem();
+    auto plan = planner_client_->getPlan(domain, problem);
+
+    if (!plan.has_value()) {
+        RCLCPP_ERROR(this->get_logger(), "Failed to fetch plan.");
+        return;
+    }
+
+    RCLCPP_INFO(this->get_logger(), "Plan fetched with %lu actions.", plan->items.size());
+
+    // Simulated output of Analyze_Plan (Team and robot repartition)
+    // std::vector<plansys2_msgs::msg::Team> teams = Analyze_Plan()
+
+    // Testing for analyze plan teams output
+    std::vector<plansys2_msgs::msg::Team> teams;
+    plansys2_msgs::msg::Team team1;
+    team1.name = "team1";
+    team1.robots = {"robot1", "robot2"};
+    teams.push_back(team1);
+    plansys2_msgs::msg::Team team2;
+    team2.name = "team2";
+    team2.robots = {"robot3", "robot4"};
+    teams.push_back(team2);
+
+    // Call the /start_teams service of TLCMN for starting teams
+    RCLCPP_INFO(this->get_logger(), "Calling the team creation client...");
+    auto start_teams_client = this->create_client<StartTeams>(
+    "/start_teams");
+
+    if (!start_teams_client->wait_for_service(20s)) {
+        RCLCPP_ERROR(this->get_logger(), "/start_teams service not available");
+        return;
+    }
+
+    auto request = std::make_shared<StartTeams::Request>();
+    request->teams = teams;
+
+    auto future = start_teams_client->async_send_request(request);
+
+    // Spin until the future is complete
+    auto result = rclcpp::spin_until_future_complete(this->get_node_base_interface(), future);
+
+    if (result != rclcpp::FutureReturnCode::SUCCESS) {
+        RCLCPP_ERROR(this->get_logger(), "Service call to /start_teams failed or timed out");
+        return;
+    }
+
+    RCLCPP_INFO(this->get_logger(), "Service call completed. Fetching response...");
+    auto response = future.get();
+    if (!response->success) {
+        RCLCPP_ERROR(this->get_logger(), "Failed to start teams: %s", response->message.c_str());
+        return;
+    }
+
+    RCLCPP_INFO(this->get_logger(), "Teams successfully started: %s", response->message.c_str());
+
+    // Create callbacks and executor clients for the teams if they dont exist
+    addExecutorCallbacks(teams);
+    addExecutorClients(teams);
+    // Start executor cients
+
+    // Start plan execution for each team
+    for (const auto &team : teams) {
+        if (executor_clients_.count(team.name) > 0) {
+            auto client = executor_clients_[team.name];
+
+            RCLCPP_INFO(this->get_logger(), "Starting execution for team '%s'.", team.name.c_str());
+            if (!client->start_plan_execution(plan.value())) {
+                RCLCPP_ERROR(this->get_logger(), "Failed to start execution for team '%s'.", team.name.c_str());
+            }
+        } else {
+            RCLCPP_WARN(this->get_logger(), "Executor client for team '%s' does not exist. Cannot start execution.", team.name.c_str());
+        }
+    }
+
+}
+
+
+
 
 }  // namespace action_simulator
-
-
-// RCLCPP_COMPONENTS_REGISTER_NODE(action_simulator::ExecutionManagerNode)
