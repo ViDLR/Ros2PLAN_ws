@@ -38,22 +38,9 @@ public:
     TeamLifecycleManager();
     ~TeamLifecycleManager();
 
-private:
-    enum class ActionTypes
-    {
-        CHANGE_SITE,
-        LANDING,
-        NAVIGATION_AIR,
-        NAVIGATION_WATER,
-        OBSERVE_2R,
-        OBSERVE,
-        SAMPLE,
-        SWITCH_AIRWATER,
-        SWITCH_WATERAIR,
-        TAKEOFF,
-        TRANSLATE_DATA
-    };
+    std::vector<std::string> getAllActionTypes();
 
+private:
     void handleStartTeams(
         const plansys2_msgs::srv::StartTeams::Request::SharedPtr request,
         const plansys2_msgs::srv::StartTeams::Response::SharedPtr response);
@@ -65,11 +52,9 @@ private:
     void stopAllExecutors();
 
     std::shared_ptr<rclcpp_lifecycle::LifecycleNode> createActionNode(
-        ActionTypes action_type,
+        const std::string &action_type,
         const std::string &robot_name,
         const std::string &team_name);
-
-    std::vector<ActionTypes> getAllActionTypes();
 
     rclcpp::Service<plansys2_msgs::srv::StartTeams>::SharedPtr start_teams_service_;
     rclcpp::Service<plansys2_msgs::srv::StopTeams>::SharedPtr stop_teams_service_;

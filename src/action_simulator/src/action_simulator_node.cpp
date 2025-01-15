@@ -19,12 +19,16 @@ SimulationNode::SimulationNode(const std::string &robot_id, const std::string &t
 
     std::string info_topic = "/simulation_info_" + robot_id_;
     std::string result_topic = "/simulation_result_" + robot_id_;
+    std::string failure_topic = "/failing_actions_" + robot_id_;
 
     this->subscription_ = this->create_subscription<plansys2_msgs::msg::ActionExecutionInfo>(
         info_topic, 10, std::bind(&SimulationNode::action_callback, this, std::placeholders::_1));
 
-    this->publisher_ = this->create_publisher<plansys2_msgs::msg::ActionExecutionInfo>(result_topic, 10);
+    failure_subscription_ = this->create_subscription<plansys2_msgs::msg::Failure>(
+        failure_topic, 10, std::bind(&SimulationNode::failure_callback, this, std::placeholders::_1));
 
+    this->publisher_ = this->create_publisher<plansys2_msgs::msg::ActionExecutionInfo>(result_topic, 10);
+    
     this->state_publisher_ = this->create_publisher<plansys2_msgs::msg::Knowledge>(
         "/simulation_knowledge_" + robot_id_, 10);
 
@@ -38,22 +42,41 @@ SimulationNode::SimulationNode(const std::string &robot_id, const std::string &t
     RCLCPP_INFO(this->get_logger(), "SimulationNode created for robot: %s in team: %s", robot_id_.c_str(), team_name_.c_str());
 }
 
-
-std::string SimulationNode::determine_failure_type()
+std::string SimulationNode::determine_failure_type(const std::string &action_name)
 {
-    if (dist_(gen_) < 0.5) {
-        int failure_type_gen = failure_type_dist_(gen_);
-        // return "1 delay";
-        switch (failure_type_gen) {
-            case 1:
-                return "1 delay";  // Representing a delay type failure
-            case 2:
-                return "1 crash";  // Representing a crash type failure
-            case 3:
-                return "1 fail";   // Representing a normal failure
+    if (failing_actions_.empty()) {
+        if (dist_(gen_) < 0.01) {  // 1% chance of failure
+            int failure_type_gen = failure_type_dist_(gen_);
+            switch (failure_type_gen) {
+                case 1:
+                    return "1 delay";  // Representing a delay type failure
+                case 2:
+                    return "1 crash";  // Representing a crash type failure
+                case 3:
+                    return "1 fail";   // Representing a normal failure
+            }
+        }
+        return "0 none";  // Default to no failure if random failure doesn't trigger
+    }
+
+    for (const auto &item : failing_actions_) {
+        if (item.action == action_name) {
+            return item.failuretype;  // Use the failure type from the message
         }
     }
-    return "0 none";
+
+    return "0 none";  // Default to no failure if no match is found
+}
+
+
+void SimulationNode::failure_callback(const plansys2_msgs::msg::Failure::SharedPtr msg)
+{
+    failing_actions_ = msg->items;
+    RCLCPP_INFO(this->get_logger(), "Received %zu failing actions", failing_actions_.size());
+    for (const auto &item : failing_actions_) {
+        RCLCPP_INFO(this->get_logger(), "Action: %s, FailureType: %s",
+                    item.action.c_str(), item.failuretype.c_str());
+    }
 }
 
 
@@ -83,9 +106,7 @@ void SimulationNode::action_callback(const plansys2_msgs::msg::ActionExecutionIn
 
         RCLCPP_INFO(this->get_logger(), "Action is active");
 
-        failure_status_ = msg->message_status.empty() || msg->message_status[0] != '0'
-                          ? determine_failure_type()
-                          : msg->message_status;
+        failure_status_ = determine_failure_type(current_action_id_);
 
         std::istringstream isstring(failure_status_);
         isstring >> failure_bool_ >> failure_type_;

@@ -44,7 +44,7 @@ def generate_launch_description():
 
     declare_bt_builder_plugin_cmd = DeclareLaunchArgument(
         'bt_builder_plugin',
-        default_value='SimpleBTBuilder',
+        default_value='STNBTBuilder',
         description='Behavior tree builder plugin.',
     )
 
@@ -127,7 +127,7 @@ def generate_launch_description():
                         'default_end_action_bt_xml_filename': LaunchConfiguration('end_action_bt_file'),
                         'bt_builder_plugin': LaunchConfiguration('bt_builder_plugin'),
                     },
-                    LaunchConfiguration('params_file')
+                    params_file
                 ]
             )
         ]
@@ -135,8 +135,6 @@ def generate_launch_description():
 
     # Create the launch description and populate
     ld = LaunchDescription()
-
-    ld.add_action(declare_params_file_cmd)
 
     # Shared components
     ld.add_action(declare_model_file_cmd)

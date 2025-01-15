@@ -5,7 +5,7 @@ using namespace std::chrono_literals;
 
 TranslateDataActionNode::TranslateDataActionNode(const std::string &robot_name, const std::string &team_name)
 : plansys2::ActionExecutorClient(
-      "transalte_data_action_node_" + robot_name,  // Node name
+      "translate_data_action_node_" + robot_name,  // Node name
       team_name,                                // Namespace
       1s),                                      // Execution rate
   robot_name_(robot_name),

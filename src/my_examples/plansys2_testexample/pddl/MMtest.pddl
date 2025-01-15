@@ -3,7 +3,7 @@
 (:domain MMdomainextended)
 (:objects
 
-robot0 robot1 robot2 robot3 - robot 
+robot0 robot1 - robot 
 
 base site1 - site 
 
@@ -29,23 +29,6 @@ cpbase cpsite1 pp1 pp2 sp1 sp2 - pointofinterest
 (canswitch robot1)
 (canrelay robot1)
 (cansample robot1)
-
-(at robot2 cpbase)
-(at_site robot2 base)
-(groundconf robot2)
-(available robot2)
-(canswitch robot2)
-(canrelay robot2)
-(cansample robot2)
-
-(at robot3 cpbase)
-(at_site robot3 base)
-(groundconf robot3)
-(available robot3)
-(canswitch robot3)
-(canrelay robot3)
-(cansample robot3)
-
 
 ; Poi/Sites states
 
@@ -80,8 +63,8 @@ cpbase cpsite1 pp1 pp2 sp1 sp2 - pointofinterest
 (water sp2)
 (air sp2)
 (partofsite sp2 site1)
-(isswitchable sp1)
-(isrelay sp1)
+(isswitchable sp2)
+(isrelay sp2)
 
 
 ;Functions
@@ -138,58 +121,6 @@ cpbase cpsite1 pp1 pp2 sp1 sp2 - pointofinterest
 (= (switchduration_waterair robot1) 8)
 (= (switchcost_waterair robot1) 30)
 
-;robot2
-;Speeds
-(= (speedair robot2) 1.5)
-(= (speedwater robot2) 0.5)
-;Energy
-(= (energy robot2) 1000000000)
-(= (recharge_rate robot2) 10)
-;Cost
-(= (assesscost robot2) 0.02)
-(= (partassesscost robot2) 0.01)
-(= (observecost robot2) 0.01)
-;Consumption
-(= (maintainconsumption_water robot2) 0.02)
-(= (maintainconsumption_air robot2) 0.08)
-(= (navconsumption_water robot2) 0.5)
-(= (navconsumption_air robot2) 0.8)
-;Switch
-(= (switchduration_airwater robot2) 5)
-(= (switchcost_airwater robot2) 20)
-(= (takeoffduration_groundair robot2) 4)
-(= (takeoffost_groundair robot2) 10)
-(= (landingduration_airground robot2) 3)
-(= (landingcost_airground robot2) 5)
-(= (switchduration_waterair robot2) 8)
-(= (switchcost_waterair robot2) 30)
-
-;robot3
-;Speeds
-(= (speedair robot3) 1.5)
-(= (speedwater robot3) 0.5)
-;Energy
-(= (energy robot3) 1000000000)
-(= (recharge_rate robot3) 10)
-;Cost
-(= (assesscost robot3) 0.02)
-(= (partassesscost robot3) 0.01)
-(= (observecost robot3) 0.01)
-;Consumption
-(= (maintainconsumption_water robot3) 0.02)
-(= (maintainconsumption_air robot3) 0.08)
-(= (navconsumption_water robot3) 0.5)
-(= (navconsumption_air robot3) 0.8)
-;Switch
-(= (switchduration_airwater robot3) 5)
-(= (switchcost_airwater robot3) 20)
-(= (takeoffduration_groundair robot3) 4)
-(= (takeoffost_groundair robot3) 10)
-(= (landingduration_airground robot3) 3)
-(= (landingcost_airground robot3) 5)
-(= (switchduration_waterair robot3) 8)
-(= (switchcost_waterair robot3) 30)
-
 ;DistancesPoiSites
 
 ;base
@@ -232,7 +163,6 @@ cpbase cpsite1 pp1 pp2 sp1 sp2 - pointofinterest
 )
 (:goal (and
 (sampled pp1)
-(sampled pp2)
 )
 )
 )

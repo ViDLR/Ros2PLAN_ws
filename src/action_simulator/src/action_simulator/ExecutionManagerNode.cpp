@@ -225,11 +225,11 @@ void ExecutionManagerNode::ExecutionSequenceFunction()
     std::vector<plansys2_msgs::msg::Team> teams;
     plansys2_msgs::msg::Team team1;
     team1.name = "team1";
-    team1.robots = {"robot1", "robot2"};
+    team1.robots = {"robot0", "robot1"};
     teams.push_back(team1);
     plansys2_msgs::msg::Team team2;
     team2.name = "team2";
-    team2.robots = {"robot3", "robot4"};
+    team2.robots = {"robot2", "robot3"};
     teams.push_back(team2);
 
     // Call the /start_teams service of TLCMN for starting teams
@@ -266,22 +266,46 @@ void ExecutionManagerNode::ExecutionSequenceFunction()
 
     // Create callbacks and executor clients for the teams if they dont exist
     addExecutorCallbacks(teams);
-    addExecutorClients(teams);
+    // addExecutorClients(teams);
+
+    // Simplify for team1 only
+    auto executor_client1 = std::make_shared<plansys2::ExecutorClient>(
+  "executor_client_team1", "team1", "executor_team1");
+
+
+    RCLCPP_INFO(this->get_logger(), "Creating Executor Client for team1...");
+
+    RCLCPP_INFO(this->get_logger(), "Executor Client for '/team1/executor_team1' is ready.");
+
+    // Store in a temporary map or variable
+    executor_clients_["team1"] = executor_client1;
+
+    executor_client1 -> start_plan_execution(plan.value());
     // Start executor cients
 
-    // Start plan execution for each team
-    for (const auto &team : teams) {
-        if (executor_clients_.count(team.name) > 0) {
-            auto client = executor_clients_[team.name];
+    // // Start plan execution for each team
+    // for (const auto &team : teams) {
+    //     if (executor_clients_.count(team.name) > 0) {
+    //         auto client = executor_clients_[team.name];
 
-            RCLCPP_INFO(this->get_logger(), "Starting execution for team '%s'.", team.name.c_str());
-            if (!client->start_plan_execution(plan.value())) {
-                RCLCPP_ERROR(this->get_logger(), "Failed to start execution for team '%s'.", team.name.c_str());
-            }
-        } else {
-            RCLCPP_WARN(this->get_logger(), "Executor client for team '%s' does not exist. Cannot start execution.", team.name.c_str());
-        }
-    }
+    //         RCLCPP_INFO(this->get_logger(), "Starting execution for team '%s'.", team.name.c_str());
+
+    //         // Log the plan details before starting execution
+    //         RCLCPP_INFO(this->get_logger(), "Publishing plan to team '%s':", team.name.c_str());
+    //         for (const auto &action : plan.value().items) {
+    //             RCLCPP_INFO(this->get_logger(), "Action: [%s] Start: %f Duration: %f",
+    //                         action.action.c_str(), action.time, action.duration);
+    //         }
+
+    //         // Attempt to start plan execution
+    //         if (!client->start_plan_execution(plan.value())) {
+    //             RCLCPP_ERROR(this->get_logger(), "Failed to start execution for team '%s'.", team.name.c_str());
+    //         }
+    //     } else {
+    //         RCLCPP_WARN(this->get_logger(), "Executor client for team '%s' does not exist. Cannot start execution.", team.name.c_str());
+    //     }
+    // }
+
 
 }
 

@@ -84,9 +84,10 @@ void TeamLifecycleManager::handleStartTeams(
             shared_executor_->add_node(simulator_node);
             normal_robot_nodes.push_back(simulator_node);
 
-            for (auto action_type : getAllActionTypes())
+            for (const auto &action_type : getAllActionTypes())
             {
                 auto action_node = createActionNode(action_type, robot, team_name);
+                action_node->set_parameter(rclcpp::Parameter("action_name", action_type));
                 action_node->set_parameter(rclcpp::Parameter("specialized_arguments", std::vector<std::string>{robot}));
                 action_node->set_parameter(rclcpp::Parameter("team_name", team_name));
 
@@ -94,6 +95,7 @@ void TeamLifecycleManager::handleStartTeams(
                 shared_executor_->add_node(action_node->get_node_base_interface());
                 lifecycle_robot_nodes.push_back(action_node);
             }
+
         }
 
         normal_robot_nodes_[team_name] = normal_robot_nodes;
@@ -247,52 +249,77 @@ void TeamLifecycleManager::stopAllExecutors() {
 }
 
 std::shared_ptr<rclcpp_lifecycle::LifecycleNode> TeamLifecycleManager::createActionNode(
-    ActionTypes action_type, const std::string &robot_name, const std::string &team_name)
+    const std::string &action_type,
+    const std::string &robot_name,
+    const std::string &team_name)
 {
-    switch (action_type)
+    if (action_type == "change_site")
     {
-    case ActionTypes::CHANGE_SITE:
         return std::make_shared<ChangeSiteActionNode>(robot_name, team_name);
-    case ActionTypes::LANDING:
+    }
+    else if (action_type == "landing")
+    {
         return std::make_shared<LandingActionNode>(robot_name, team_name);
-    case ActionTypes::NAVIGATION_AIR:
+    }
+    else if (action_type == "navigation_air")
+    {
         return std::make_shared<NavigationAirActionNode>(robot_name, team_name);
-    case ActionTypes::NAVIGATION_WATER:
+    }
+    else if (action_type == "navigation_water")
+    {
         return std::make_shared<NavigationWaterActionNode>(robot_name, team_name);
-    case ActionTypes::OBSERVE_2R:
+    }
+    else if (action_type == "observe_2r")
+    {
         return std::make_shared<Observe2rActionNode>(robot_name, team_name);
-    case ActionTypes::OBSERVE:
+    }
+    else if (action_type == "observe")
+    {
         return std::make_shared<ObserveActionNode>(robot_name, team_name);
-    case ActionTypes::SAMPLE:
+    }
+    else if (action_type == "sample")
+    {
         return std::make_shared<SampleActionNode>(robot_name, team_name);
-    case ActionTypes::SWITCH_AIRWATER:
+    }
+    else if (action_type == "switch_airwater")
+    {
         return std::make_shared<SwitchAirWaterActionNode>(robot_name, team_name);
-    case ActionTypes::SWITCH_WATERAIR:
+    }
+    else if (action_type == "switch_waterair")
+    {
         return std::make_shared<SwitchWaterAirActionNode>(robot_name, team_name);
-    case ActionTypes::TAKEOFF:
+    }
+    else if (action_type == "takeoff")
+    {
         return std::make_shared<TakeoffActionNode>(robot_name, team_name);
-    case ActionTypes::TRANSLATE_DATA:
+    }
+    else if (action_type == "translate_data")
+    {
         return std::make_shared<TranslateDataActionNode>(robot_name, team_name);
-    default:
-        throw std::invalid_argument("Unsupported action type");
+    }
+    else
+    {
+        throw std::invalid_argument("Unsupported action type: " + action_type);
     }
 }
 
-std::vector<TeamLifecycleManager::ActionTypes> TeamLifecycleManager::getAllActionTypes()
+
+std::vector<std::string> TeamLifecycleManager::getAllActionTypes()
 {
     return {
-        ActionTypes::CHANGE_SITE,
-        ActionTypes::LANDING,
-        ActionTypes::NAVIGATION_AIR,
-        ActionTypes::NAVIGATION_WATER,
-        ActionTypes::OBSERVE_2R,
-        ActionTypes::OBSERVE,
-        ActionTypes::SAMPLE,
-        ActionTypes::SWITCH_AIRWATER,
-        ActionTypes::SWITCH_WATERAIR,
-        ActionTypes::TAKEOFF,
-        ActionTypes::TRANSLATE_DATA};
+        "change_site",
+        "landing",
+        "navigation_air",
+        "navigation_water",
+        "observe_2r",
+        "observe",
+        "sample",
+        "switch_airwater",
+        "switch_waterair",
+        "takeoff",
+        "translate_data"};
 }
+
 
 int main(int argc, char **argv)
 {

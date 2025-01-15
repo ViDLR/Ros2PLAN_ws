@@ -173,4 +173,4 @@ set function (= (distance sp2 pp2) 4.75)
 set function (= (distance sp2 sp1) 9.8)
 
 ; Goals
-set goal (and (at robot0 pp1) (at robot1 pp2))
+set goal (and (sampled pp1))
