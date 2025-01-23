@@ -48,7 +48,8 @@ void TranslateDataActionNode::do_work()
     msg.status = plansys2_msgs::msg::ActionExecutionInfo::EXECUTING;
     msg.action = action_managed_ + robot_name_;
     msg.completion = 0.0;
-    msg.message_status = ""; // if we give the message of failure it will be here
+    msg.message_status = ""; 
+    msg.arguments = {current_poi1_,current_arguments_[2]};
   
     publisher_->publish(msg);
     action_in_progress_ = true;

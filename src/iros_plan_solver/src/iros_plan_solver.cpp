@@ -84,85 +84,114 @@ namespace plansys2
             output_dir_parameter_name_, std::filesystem::temp_directory_path());
     }
 
-    std::optional<plansys2_msgs::msg::Plan>
-    IROSPlanSolver::getPlan(
+    std::optional<plansys2_msgs::msg::Plan>IROSPlanSolver::getPlan(
         const std::string &domain, const std::string &problem,
         const std::string &node_namespace,
         const rclcpp::Duration solver_timeout)
     {
-        // Prepare the directories for input and output
-        auto output_dir_maybe = create_folders(node_namespace);
+        if (system(nullptr) == 0) {
+            RCLCPP_ERROR(lc_node_->get_logger(), "System shell not available for executing commands.");
+            return {};
+        }
+
+        // Create output directories for temporary files
+        const auto output_dir_maybe = create_folders(node_namespace);
         if (!output_dir_maybe) {
+            RCLCPP_ERROR(lc_node_->get_logger(), "Failed to create output directories.");
             return {};
         }
         const auto &output_dir = output_dir_maybe.value();
-        
-        // Write domain and problem files
-        auto domain_file_path = output_dir / "domain.pddl";
-        auto problem_file_path = output_dir / "problem.pddl";
-        std::ofstream domain_out(domain_file_path), problem_out(problem_file_path);
-        domain_out << domain;
-        problem_out << problem;
-        domain_out.close();
-        problem_out.close();
+        RCLCPP_INFO(lc_node_->get_logger(), "Output directory: %s", output_dir.string().c_str());
 
-        // Define the path to the Python script
-        std::string script_path = ament_index_cpp::get_package_share_directory("iros_plan_solver") + "/scripts/solve_problem.py";
-        int nb_cluster = 2;  // Example: define the number of clusters
-        // Perform planning
-        plansys2_msgs::msg::Plan ret;
-        // Execute the Python script with the number of clusters, domain, and problem file
-        std::string output_file_path = (output_dir / "result.txt").string();
-        std::string command = "python3 " + script_path + " " + domain_file_path.string() + " " + problem_file_path.string() + " " + std::to_string(nb_cluster) + " > " + output_file_path;
-        if (system(command.c_str()) != 0) {
-            RCLCPP_ERROR(lc_node_->get_logger(), "Failed to execute the Python script.");
+        // Write domain and problem files
+        const auto domain_file_path = output_dir / "domain.pddl";
+        const auto problem_file_path = output_dir / "problem.pddl";
+
+        
+        std::ofstream domain_out(domain_file_path);
+        std::ofstream problem_out(problem_file_path);
+
+        if (!domain_out || !problem_out) {
+            RCLCPP_ERROR(lc_node_->get_logger(), "Failed to open domain or problem file for writing.");
             return {};
         }
 
-        // Read the result from the Python script
-        std::ifstream result_file(output_file_path);
-        if (!result_file) {
-            RCLCPP_ERROR(lc_node_->get_logger(), "Failed to open result file.");
+        domain_out << domain;
+        problem_out << problem;
+        // Log the domain and problem names and their contents
+        RCLCPP_INFO(lc_node_->get_logger(), "Domain file: %s", domain_file_path.string().c_str());
+        // RCLCPP_INFO(lc_node_->get_logger(), "Domain content:\n%s", domain.c_str());
+        RCLCPP_INFO(lc_node_->get_logger(), "Problem file: %s", problem_file_path.string().c_str());
+        // RCLCPP_INFO(lc_node_->get_logger(), "Problem content:\n%s", problem.c_str());
+        
+
+        // Define the path to the Python script
+        const std::string script_path = ament_index_cpp::get_package_share_directory("iros_plan_solver") + "/scripts/solve_problem.py";
+
+        if (!std::filesystem::exists(script_path)) {
+            RCLCPP_ERROR(lc_node_->get_logger(), "Script not found at path: %s", script_path.c_str());
+            return {};
+        }
+
+        // Execute the Python script
+        const auto plan_file_path = output_dir / "plan_result.txt";
+        const std::string command = "python3 " + script_path + " " +
+                                    domain_file_path.string() + " " +
+                                    problem_file_path.string() + " " +
+                                    "2" +
+                                    " > " + plan_file_path.string();
+
+        RCLCPP_INFO(lc_node_->get_logger(), "Executing command: %s", command.c_str());
+
+        const int status = system(command.c_str());
+        if (status != 0) {
+            RCLCPP_ERROR(lc_node_->get_logger(), "Failed to execute Python script.");
+            return {};
+        }
+
+        // Parse the result file
+        plansys2_msgs::msg::Plan plan;
+        std::ifstream plan_file(plan_file_path);
+        if (!plan_file.is_open()) {
+            RCLCPP_ERROR(lc_node_->get_logger(), "Failed to open plan result file: %s", plan_file_path.string().c_str());
             return {};
         }
 
         std::string line;
-        std::ifstream plan_file(output_file_path);
-        bool solution = false;
-
-        if (plan_file.is_open()) {
-            while (getline(plan_file, line)) {
-            if (!solution) {
+        bool solution_found = false;
+        while (std::getline(plan_file, line)) {
+            if (!solution_found) {
                 if (line.find("Solution Found") != std::string::npos) {
-                solution = true;
+                    solution_found = true;
                 }
-            } else if (line.front() != ';') {
+            } else if (!line.empty() && line.front() != ';') {
                 plansys2_msgs::msg::PlanItem item;
-                size_t colon_pos = line.find(":");
-                size_t colon_par = line.find(")");
-                size_t colon_bra = line.find("[");
 
-                std::string time = line.substr(0, colon_pos);
-                std::string action = line.substr(colon_pos + 2, colon_par - colon_pos - 1);
-                std::string duration = line.substr(colon_bra + 1);
-                duration.pop_back();
+                // Parse plan line: Time: Action [Duration]
+                try {
+                    size_t colon_pos = line.find(":");
+                    size_t paren_pos = line.find(")");
+                    size_t bracket_pos = line.find("[");
 
-                item.time = std::stof(time);
-                item.action = action;
-                item.duration = std::stof(duration);
+                    item.time = std::stof(line.substr(0, colon_pos));
+                    item.action = line.substr(colon_pos + 2, paren_pos - colon_pos - 1);
+                    item.duration = std::stof(line.substr(bracket_pos + 1, line.find("]") - bracket_pos - 1));
 
-                ret.items.push_back(item);
+                    plan.items.push_back(item);
+                } catch (const std::exception &e) {
+                    RCLCPP_ERROR(lc_node_->get_logger(), "Error parsing plan item: %s", e.what());
+                }
             }
-            }
-            plan_file.close();
         }
 
-        if (ret.items.empty()) {
+        if (plan.items.empty() || !solution_found) {
+            RCLCPP_ERROR(lc_node_->get_logger(), "No valid solution found in the plan.");
             return {};
         }
 
-        return ret;
+        return plan;
     }
+
 
 
     bool

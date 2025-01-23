@@ -78,7 +78,7 @@ void TeamLifecycleManager::handleStartTeams(
         for (const auto &robot : robots)
         {
             auto simulator_node = std::make_shared<SimulationNode>(robot, team_name);
-            simulator_node->set_parameter(rclcpp::Parameter("robot_id", robot));
+            simulator_node->set_parameter(rclcpp::Parameter("robot_name", robot));
             simulator_node->set_parameter(rclcpp::Parameter("team_name", team_name));
 
             shared_executor_->add_node(simulator_node);

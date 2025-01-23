@@ -787,7 +787,7 @@ def generateNewMissionRobotProblems(site, folder):
 
 def getdataclassfrompddl(file):
     """ Create data class from PDDL problem script """
-
+    mission = Mission(sites=[],robots=[])
     with open(file, 'r') as f:
             contents = f.readlines()
             if contents[0].startswith("; mission = "):

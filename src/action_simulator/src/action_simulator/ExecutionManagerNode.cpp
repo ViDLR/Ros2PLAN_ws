@@ -8,62 +8,122 @@ using StartTeams = plansys2_msgs::srv::StartTeams;
 ExecutionManagerNode::ExecutionManagerNode() : rclcpp::Node("execution_manager_node")
 {
     RCLCPP_INFO(this->get_logger(), "Creating ExecutionManagerNode...");
+    world_info_publisher_ = this->create_publisher<plansys2_msgs::msg::WorldInfo>("/world_info", 10);
     ExecutionSequenceFunction();
 }
 
-void ExecutionManagerNode::setup_knowledge(const std::string &file_path)
+void ExecutionManagerNode::publish_world_info(const std::string &file_path) 
 {
-    RCLCPP_INFO(this->get_logger(), "Loading knowledge from file: %s", file_path.c_str());
+        RCLCPP_INFO(this->get_logger(), "Loading WorldInfo from JSON file: %s", file_path.c_str());
 
-    problem_client_->clearKnowledge();
-    RCLCPP_INFO(this->get_logger(), "Cleared existing knowledge base.");
-
-    std::ifstream file(file_path);
-    if (!file.is_open()) {
-        RCLCPP_ERROR(this->get_logger(), "Failed to open knowledge setup file: %s", file_path.c_str());
-        return;
-    }
-
-    std::string line;
-    while (std::getline(file, line)) {
-        RCLCPP_INFO(this->get_logger(), "Processing line: %s", line.c_str());
-        std::istringstream iss(line);
-        std::string command;
-        iss >> command;
-
-        if (command == "set") {
-            std::string type;
-            iss >> type;
-            if (type == "instance") {
-                std::string name, category;
-                iss >> name >> category;
-                RCLCPP_INFO(this->get_logger(), "Adding instance: %s, %s", name.c_str(), category.c_str());
-                problem_client_->addInstance(plansys2::Instance(name, category));
-            } else if (type == "predicate") {
-                std::string predicate;
-                std::getline(iss, predicate);
-                predicate = "(" + predicate.substr(predicate.find('(') + 1);
-                RCLCPP_INFO(this->get_logger(), "Adding predicate: %s", predicate.c_str());
-                problem_client_->addPredicate(plansys2::Predicate(predicate));
-            } else if (type == "function") {
-                std::string function;
-                std::getline(iss, function);
-                RCLCPP_INFO(this->get_logger(), "Adding function: %s", function.c_str());
-                problem_client_->addFunction(plansys2::Function(function));
-            } else if (type == "goal") {
-                std::string goal;
-                std::getline(iss, goal);
-                RCLCPP_INFO(this->get_logger(), "Setting goal: %s", goal.c_str());
-                problem_client_->setGoal(plansys2::Goal(goal));
-            } else {
-                RCLCPP_WARN(this->get_logger(), "Unknown command type: %s", type.c_str());
-            }
+        // Read JSON file
+        std::ifstream file(file_path);
+        if (!file.is_open()) {
+            RCLCPP_ERROR(this->get_logger(), "Failed to open JSON file: %s", file_path.c_str());
+            return;
         }
-    }
 
-    file.close();
-    RCLCPP_INFO(this->get_logger(), "Knowledge successfully loaded from %s", file_path.c_str());
+        nlohmann::json world_data;
+        try {
+            file >> world_data;
+        } catch (const std::exception &e) {
+            RCLCPP_ERROR(this->get_logger(), "Error parsing JSON file: %s", e.what());
+            return;
+        }
+        file.close();
+
+        // Create WorldInfo message
+        plansys2_msgs::msg::WorldInfo world_info_msg;
+
+        try {
+            // Populate Points
+            for (const auto &point : world_data["points"]) {
+                plansys2_msgs::msg::Point poi;
+                poi.id = point["id"];
+                poi.coordinates = {point["coordinates"][0], point["coordinates"][1], point["coordinates"][2]};
+                poi.type = point["type"];
+                world_info_msg.points.push_back(poi);
+
+                RCLCPP_INFO(this->get_logger(), "Added Point: ID=%s, Type=%s, Coordinates=[%f, %f, %f]",
+                            poi.id.c_str(), poi.type.c_str(),
+                            poi.coordinates[0], poi.coordinates[1], poi.coordinates[2]);
+            }
+
+            // Populate Sites
+            for (const auto &site : world_data["sites"]) {
+                plansys2_msgs::msg::Site site_msg;
+                site_msg.id = site["id"];
+                site_msg.points = site["points"].get<std::vector<std::string>>();
+                site_msg.size = site["size"];
+                world_info_msg.sites.push_back(site_msg);
+
+                RCLCPP_INFO(this->get_logger(), "Added Site: ID=%s, Size=%f, Points=[%s]",
+                            site_msg.id.c_str(), site_msg.size,
+                            rcpputils::join(site_msg.points, ", ").c_str());
+            }
+        } catch (const std::exception &e) {
+            RCLCPP_ERROR(this->get_logger(), "Error creating WorldInfo message: %s", e.what());
+            return;
+        }
+
+        // Publish the WorldInfo message
+        world_info_publisher_->publish(world_info_msg);
+        RCLCPP_INFO(this->get_logger(), "WorldInfo message published successfully.");
 }
+
+// void ExecutionManagerNode::setup_knowledge(const std::string &file_path)
+// {
+//     RCLCPP_INFO(this->get_logger(), "Loading knowledge from file: %s", file_path.c_str());
+
+//     problem_client_->clearKnowledge();
+//     RCLCPP_INFO(this->get_logger(), "Cleared existing knowledge base.");
+
+//     std::ifstream file(file_path);
+//     if (!file.is_open()) {
+//         RCLCPP_ERROR(this->get_logger(), "Failed to open knowledge setup file: %s", file_path.c_str());
+//         return;
+//     }
+
+//     std::string line;
+//     while (std::getline(file, line)) {
+//         RCLCPP_INFO(this->get_logger(), "Processing line: %s", line.c_str());
+//         std::istringstream iss(line);
+//         std::string command;
+//         iss >> command;
+
+//         if (command == "set") {
+//             std::string type;
+//             iss >> type;
+//             if (type == "instance") {
+//                 std::string name, category;
+//                 iss >> name >> category;
+//                 RCLCPP_INFO(this->get_logger(), "Adding instance: %s, %s", name.c_str(), category.c_str());
+//                 problem_client_->addInstance(plansys2::Instance(name, category));
+//             } else if (type == "predicate") {
+//                 std::string predicate;
+//                 std::getline(iss, predicate);
+//                 predicate = "(" + predicate.substr(predicate.find('(') + 1);
+//                 RCLCPP_INFO(this->get_logger(), "Adding predicate: %s", predicate.c_str());
+//                 problem_client_->addPredicate(plansys2::Predicate(predicate));
+//             } else if (type == "function") {
+//                 std::string function;
+//                 std::getline(iss, function);
+//                 RCLCPP_INFO(this->get_logger(), "Adding function: %s", function.c_str());
+//                 problem_client_->addFunction(plansys2::Function(function));
+//             } else if (type == "goal") {
+//                 std::string goal;
+//                 std::getline(iss, goal);
+//                 RCLCPP_INFO(this->get_logger(), "Setting goal: %s", goal.c_str());
+//                 problem_client_->setGoal(plansys2::Goal(goal));
+//             } else {
+//                 RCLCPP_WARN(this->get_logger(), "Unknown command type: %s", type.c_str());
+//             }
+//         }
+//     }
+
+//     file.close();
+//     RCLCPP_INFO(this->get_logger(), "Knowledge successfully loaded from %s", file_path.c_str());
+// }
 
 
 // void ExecutionManagerNode::Analyze_Plan(const std::string &file_path)
@@ -264,9 +324,16 @@ void ExecutionManagerNode::ExecutionSequenceFunction()
 
     RCLCPP_INFO(this->get_logger(), "Teams successfully started: %s", response->message.c_str());
 
+    
+    
+        
+
     // Create callbacks and executor clients for the teams if they dont exist
     addExecutorCallbacks(teams);
     // addExecutorClients(teams);
+
+    // Feed the teams with the world information (problem information)
+    publish_world_info("/home/virgile/PHD/Ros2PLAN_ws/src/my_examples/plansys2_testexample/pddl/world_info.json");
 
     // Simplify for team1 only
     auto executor_client1 = std::make_shared<plansys2::ExecutorClient>(

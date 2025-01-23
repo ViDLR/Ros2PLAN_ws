@@ -42,16 +42,26 @@ void ChangeSiteActionNode::do_work()
   if (!action_in_progress_) {
     plansys2_msgs::msg::ActionExecutionInfo msg;
     current_site1_ = current_arguments_[1];
-    current_site2_ = current_arguments_[3];
-    current_poi1_ = current_arguments_[2];
+    current_site2_ = current_arguments_[2];
+    current_poi1_ = current_arguments_[3];
     current_poi2_ = current_arguments_[4];
-    msg.action_full_name = action_managed_ + " " + current_site1_ + " " + current_site2_ + " " + current_poi1_ + " " + current_site1_;
+
+    // int i = 0;
+    // for (auto arg : current_arguments_)
+    // {
+    //   RCLCPP_INFO(this->get_logger(), "i: %d", i);
+    //   RCLCPP_INFO(this->get_logger(), "arg: %s", arg.c_str());
+    //   i += 1;
+    // }
+    
+    msg.action_full_name = action_managed_ + " " + current_site1_ + " " + current_site2_ + " " + current_poi1_ + " " + current_poi2_;
     msg.start_stamp = this->get_clock()->now();
     msg.status_stamp = this->get_clock()->now();
     msg.status = plansys2_msgs::msg::ActionExecutionInfo::EXECUTING;
     msg.action = action_managed_ + robot_name_;
     msg.completion = 0.0;
-    msg.message_status = ""; // if we give the message of failure it will be here
+    msg.message_status = ""; 
+    msg.arguments = {current_poi1_,current_poi2_};
 
     publisher_->publish(msg);
     action_in_progress_ = true;

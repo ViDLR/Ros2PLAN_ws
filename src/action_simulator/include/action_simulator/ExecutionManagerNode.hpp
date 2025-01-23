@@ -9,7 +9,8 @@
 #include "plansys2_executor/ExecutorClient.hpp"
 #include "plansys2_planner/PlannerClient.hpp"
 #include "plansys2_msgs/msg/action_execution.hpp"
-
+#include <nlohmann/json.hpp>
+#include "plansys2_msgs/msg/world_info.hpp"
 
 #include <fstream>
 #include <memory>
@@ -26,8 +27,10 @@ public:
 
 private:
     void ExecutionSequenceFunction(); 
-    void setup_knowledge(const std::string &filename); 
+    // void setup_knowledge(const std::string &filename); 
     // void create_and_launch_teams();
+    // void publish_world_info(const std::string &file_path);
+    void publish_world_info(const std::string &file_path);
     void createExecutorCallback(const std::string &team_name);
     void removeExecutorCallback(const std::string &team_name);
     bool hasExecutorCallback(const std::string &team_name) const;
@@ -38,13 +41,16 @@ private:
     void removeExecutorClient(const std::string &team_name);
     bool hasExecutorClient(const std::string &team_name) const;
     void removeExecutorClients(const std::vector<std::string> &team_names);
+    
     // void reload_knowledge_and_replan();
-
+    rclcpp::Publisher<plansys2_msgs::msg::WorldInfo>::SharedPtr world_info_publisher_;
     std::shared_ptr<plansys2::DomainExpertClient> domain_client_;
     std::shared_ptr<plansys2::ProblemExpertClient> problem_client_;
     std::shared_ptr<plansys2::PlannerClient> planner_client_;
     std::unordered_map<std::string, rclcpp::Subscription<plansys2_msgs::msg::ActionExecution>::SharedPtr> executor_callbacks_;
     std::unordered_map<std::string, std::shared_ptr<plansys2::ExecutorClient>> executor_clients_;
+
+    
 
 
 };

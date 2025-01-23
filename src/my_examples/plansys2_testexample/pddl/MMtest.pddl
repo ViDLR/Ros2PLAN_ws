@@ -162,7 +162,11 @@ cpbase cpsite1 pp1 pp2 sp1 sp2 - pointofinterest
 
 )
 (:goal (and
+; (at robot1 pp1)
+; (at robot0 sp1)
+; (waterconf robot0)
 (sampled pp1)
+(sampled pp2)
 )
 )
 )

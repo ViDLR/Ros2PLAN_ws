@@ -40,6 +40,11 @@ install(TARGETS
   RUNTIME DESTINATION lib/${PROJECT_NAME}
 )
 
+install(
+  DIRECTORY scripts/
+  DESTINATION share/${PROJECT_NAME}/scripts
+  USE_SOURCE_PERMISSIONS
+)
 
 install(DIRECTORY include/
   DESTINATION include/)
@@ -51,6 +56,12 @@ install(DIRECTORY external_solver/
 
 install(FILES iros_plan_solver_plugin.xml
   DESTINATION share/${PROJECT_NAME})
+
+install(
+  DIRECTORY scripts/
+  DESTINATION share/${PROJECT_NAME}/scripts
+  USE_SOURCE_PERMISSIONS
+)
 
 
 ament_export_include_directories(include)

@@ -1,0 +1,78 @@
+{
+    "points": [
+        {
+            "id": "cpbase",
+            "coordinates": [
+                410.8,
+                212.9,
+                0
+            ],
+            "type": "transition"
+        },
+        {
+            "id": "cpsite1",
+            "coordinates": [
+                471.7,
+                277.9,
+                1
+            ],
+            "type": "survey"
+        },
+        {
+            "id": "pp1",
+            "coordinates": [
+                465.8,
+                270.3,
+                -2
+            ],
+            "type": "sample"
+        },
+        {
+            "id": "pp2",
+            "coordinates": [
+                476.7,
+                285.3,
+                -2
+            ],
+            "type": "sample"
+        },
+        {
+            "id": "sp1",
+            "coordinates": [
+                466.7,
+                281.0,
+                0
+            ],
+            "type": "transition"
+        },
+        {
+            "id": "sp2",
+            "coordinates": [
+                476.5,
+                281.0,
+                0
+            ],
+            "type": "transition"
+        }
+    ],
+    "sites": [
+        {
+            "id": "base",
+            "points": [
+                "cpbase"
+            ],
+            "size": 10
+        },
+        {
+            "id": "site1",
+            "points": [
+                "cpsite1",
+                "pp1",
+                "pp2",
+                "sp1",
+                "sp2"
+            ],
+            "size": 20
+        }
+    ]
+}
