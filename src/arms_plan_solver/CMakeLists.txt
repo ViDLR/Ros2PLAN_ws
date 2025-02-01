@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.5)
 
-project(iros_plan_solver)
+project(arms_plan_solver)
 
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
@@ -12,7 +12,7 @@ find_package(plansys2_core REQUIRED)
 
 
 add_library(${PROJECT_NAME} SHARED
-  src/iros_plan_solver.cpp
+  src/arms_plan_solver.cpp
 )
 
 ament_target_dependencies(${PROJECT_NAME}
@@ -31,7 +31,7 @@ ament_target_dependencies(${PROJECT_NAME} ${dependencies})
 
 target_compile_definitions(${PROJECT_NAME} PUBLIC "PLUGINLIB__DISABLE_BOOST_FUNCTIONS")
 
-pluginlib_export_plugin_description_file(plansys2_core iros_plan_solver_plugin.xml)
+pluginlib_export_plugin_description_file(plansys2_core arms_plan_solver_plugin.xml)
 
 install(TARGETS
   ${PROJECT_NAME}
@@ -54,7 +54,7 @@ install(DIRECTORY external_solver/
   USE_SOURCE_PERMISSIONS
 )
 
-install(FILES iros_plan_solver_plugin.xml
+install(FILES arms_plan_solver_plugin.xml
   DESTINATION share/${PROJECT_NAME})
 
 install(

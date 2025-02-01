@@ -6,6 +6,7 @@ from math import sqrt
 from random import randint, randrange, uniform
 import scipy.stats as scistat
 import subprocess
+import json
 
 import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
@@ -613,7 +614,7 @@ def generateTMProblemPDDL(mission=Mission(sites=[],robots=[]), num=str()):
             # if p.name.startswith("sp"):
             #     goallines.append('(part_assessed {0})'.format(p.name))
             if p.typepoi == "sample":
-                goallines.append('(assessed {0})'.format(p.name))
+                goallines.append('(sampled {0})'.format(p.name))
 
     goallines.append(')')
     goallines.append(')')
@@ -670,12 +671,16 @@ def generateNewMissionRobotProblems(site, folder):
         initstatelines.append('(at_site {0} {1})'.format(r.name,site.name))
         # if r.medium==1:
         initstatelines.append('(airconf {0})'.format(r.name))
+        
         # elif r.medium == -1:
         #     initstatelines.append('(waterconf {0})'.format(r.name))
         # elif r.medium == 0:
         #     initstatelines.append('(groundconf {0})'.format(r.name))
 
         initstatelines.append('(available {0})'.format(r.name))
+        initstatelines.append('(canswitch {0})'.format(r.name))
+        initstatelines.append('(canrelay {0})'.format(r.name))
+        initstatelines.append('(cansample {0})'.format(r.name))
         initstatelines.append('')
 
     initstatelines.append('')
@@ -687,9 +692,11 @@ def generateNewMissionRobotProblems(site, folder):
     initstatelines.append(';{0}'.format(site.name))
 
     for p in site.poi:
-
         if p.typepoi == "transition":
             initstatelines.append('(transition_poi {0})'.format(p.name))
+            initstatelines.append('(isswitchable {0})'.format(p.name))
+            initstatelines.append('(isrelay {0})'.format(p.name))
+            
         elif p.typepoi == "survey":
                 initstatelines.append('(survey_poi {0})'.format(p.name))
         else:
@@ -771,7 +778,7 @@ def generateNewMissionRobotProblems(site, folder):
         # if p.name.startswith("sp"):
         #     goallines.append('(part_assessed {0})'.format(p.name))
         if p.typepoi == "sample":
-            goallines.append('(assessed {0})'.format(p.name))
+            goallines.append('(sampled {0})'.format(p.name))
 
     goallines.append(')')
     goallines.append(')')
@@ -780,7 +787,7 @@ def generateNewMissionRobotProblems(site, folder):
     totallines = Debutlines + objectlines + initstatelines + goallines
     totallines.append(')')
 
-    with open('{0}.pddl'.format(folder + site.name), 'w') as f:
+    with open('{0}.pddl'.format(folder + "/" + site.name), 'w') as f:
         for line in totallines:
             f.write(line)
             f.write('\n')
@@ -792,6 +799,76 @@ def getdataclassfrompddl(file):
             contents = f.readlines()
             if contents[0].startswith("; mission = "):
                 mission = eval(contents[0].partition("= ")[2])
+    return mission
+
+def recover_mission_from_json(json_file: Path) -> Mission:
+    """
+    Reads a world_info.json file and recovers the Mission data class.
+    :param json_file: Path to the JSON file containing world information.
+    :return: Mission object constructed from the JSON data.
+    """
+    # Load the JSON data
+    with open(json_file, 'r') as f:
+        data = json.load(f)
+
+    # Map to store POIs by their ID
+    points: Dict[str, Poi] = {}
+    for point in data["points"]:
+        # Infer mediums based on the type of the POI
+        mediums = []
+        if point["type"] == "transition":
+            mediums = [-1, 1]
+        elif point["type"] == "survey":
+            mediums = [1]
+        elif point["type"] == "sample":
+            mediums = [-1]
+        
+        # Create a Poi object
+        points[point["id"]] = Poi(
+            mediums=mediums,
+            name=point["id"],
+            loc=tuple(point["coordinates"]),
+            typepoi=point["type"]
+        )
+
+    # Parse sites and associate POIs
+    sites = []
+    for site in data["sites"]:
+        # Extract associated POIs for this site
+        site_pois = [points[poi_id] for poi_id in site["points"]]
+
+        # Calculate the center of the site based on its POIs' coordinates
+        if site_pois:
+            x_center = sum(poi.loc[0] for poi in site_pois) / len(site_pois)
+            y_center = sum(poi.loc[1] for poi in site_pois) / len(site_pois)
+            z_center = sum(poi.loc[2] for poi in site_pois) / len(site_pois)
+            center = (x_center, y_center, z_center)
+        else:
+            center = (0, 0, 0)
+
+        # Create a Site object
+        sites.append(Site(
+            poi=site_pois,
+            name=site["id"],
+            center=center,
+            size=site["size"]
+        ))
+
+    # Hardcoded robots (as per example)
+    robots = [
+        Robot(name=f"robot{i}", loc=(410.8, 212.9, 0), medium=0, poi="cpbase", site="base", energy=10000)
+        for i in range(4)
+    ]
+
+    # Construct and return the Mission object
+    mission = Mission(
+        sites=sites,
+        robots=robots,
+        objective="assess",  # From example
+        arenasize=1000,      # From example
+        sitesize=(10, 50)    # From example
+    )
+
     return mission
 
 ##################### CORE ALGORITHM TO GET BEST ASSIGNEMENT ########################
@@ -1374,7 +1451,13 @@ def p_plan(plan_path):
             time, details = action.split(":")
             details = details.split("[")[0].strip()
             action_name, *params = details.split()
-            if "navigation" in action_name or "switch" in action_name:
+            if "observe" in action_name:
+                robot1 = params[0]
+                if "observe_2r" in action_name:
+                    robot2 = params[1]
+                    robot_info[robot2] = {'position': params[-2], 'conf': "airconf"}
+                robot_info[robot1] = {'position': params[-2], 'conf': "airconf"}
+            elif "navigation" in action_name or "switch" in action_name:
                 robot = params[0]
                 if robot not in robot_info:
                     robot_info[robot] = {'position': None, 'conf': None}
@@ -1387,6 +1470,7 @@ def p_plan(plan_path):
                     robot_info[robot]['conf'] = 'airconf'
                 elif "landing" in action_name:
                     robot_info[robot]['conf'] = 'groundconf'
+
     return robot_info
 
 def generateReturnProblem(original_path, updated_path, robot_info):
@@ -1420,76 +1504,40 @@ def generateReturnProblem(original_path, updated_path, robot_info):
     with open(updated_path, 'w') as file:
         file.writelines(new_lines)
 
-def generateNavProblem(original_path, updated_path, robot_info, prevsite, nextsite):
+def generateNavProblem(original_path, updated_path, robot_info, current_site, nextsite):
     """ Reads an original PDDL problem file, updates the initial states, and writes to a new file. """
     with open(original_path, 'r') as file:
         lines = file.readlines()
     new_lines = []
-    previous_lines = []
+    print(original_path, updated_path, robot_info, current_site, nextsite)
+
     for line in lines:
-        
-        if '(at ' in line or '(at_site ' in line:
-            previous_lines.append(line)
+        if 'at ' in line or 'at_site ' in line or 'conf' in line:
             for robot in robot_info:
-                if '(at {0}'.format(robot) in line:
-                    new_lines.append("(at {0} cp{1})\n".format(robot, prevsite))
+                if 'at {0}'.format(robot) in line:
+                    new_lines.append("        ( at {0} cp{1})\n".format(robot, current_site))
 
-                if '(at_site {0}'.format(robot) in line:
-                    new_lines.append("(at_site {0} {1})\n".format(robot, prevsite))
+                if 'at_site {0}'.format(robot) in line:
+                    new_lines.append("        ( at_site {0} {1})\n".format(robot, current_site))
 
-                # if '(groundconf {0}'.format(robot) in line:
-                #     new_lines.append("(groundconf {0})\n".format(robot))
-                    
+                if 'conf {0}'.format(robot) in line:
+                    if current_site == "base":
+                        new_lines.append("        ( groundconf {0})\n".format(robot))
+                    else:
+                        new_lines.append("        ( airconf {0})\n".format(robot))
 
-        elif '(:goal' in line:
+        elif 'goal' in line:
             new_lines.append(line)  # Add the initial line of the goal block
+            new_lines.append("    ( and\n")
             # Add the previous state as goal conditions
             for robot in robot_info:
-                new_lines.append("(at {0} cp{1})\n".format(robot, nextsite))
-                new_lines.append("(at_site {0} {1})\n".format(robot, nextsite))
-
-            new_lines.append(")\n")
-            new_lines.append(")\n")
-            new_lines.append(")")
-            break
-        
-        else:
-            new_lines.append(line)
-        
-    with open(updated_path, 'w') as file:
-        file.writelines(new_lines)
-
-def generateNavProblemSites(original_path, updated_path, robot_info, prevsite, nextsite):
-    """ Reads an original PDDL problem file, updates the initial states, and writes to a new file. """
-    with open(original_path, 'r') as file:
-        lines = file.readlines()
-    new_lines = []
-    previous_lines = []
-    for line in lines:
-        
-        if '(at ' in line or '(at_site ' in line or '(groundconf' in line:
-            previous_lines.append(line)
-            for robot, info in robot_info.items():
-
-                if '(at {0}'.format(robot) in line:
-                    new_lines.append(f"(at {robot} {info['position']})\n")
-
-                if '(at_site {0}'.format(robot) in line:
-                    new_lines.append("(at_site {0} {1})\n".format(robot, prevsite))
-
-                if '(groundconf {0}'.format(robot) in line:
-                    # print(line,f"({info['conf']} {robot})\n")
-                    new_lines.append(f"({info['conf']} {robot})\n")
-                    
-
-        elif '(:goal' in line:
-            new_lines.append(line)  # Add the initial line of the goal block
-            # Add the previous state as goal conditions
-            for robot in robot_info:
-                new_lines.append("(at {0} cp{1})\n".format(robot, nextsite))
-                new_lines.append("(at_site {0} {1})\n".format(robot, nextsite))
-
-            new_lines.append(")\n")
+                if nextsite == "base":
+                    new_lines.append("        ( at {0} cp{1})\n".format(robot, nextsite))
+                    new_lines.append("        ( groundconf {0})\n".format(robot))
+                else:
+                    new_lines.append("        ( at {0} cp{1})\n".format(robot, nextsite))
+                    new_lines.append("        ( at_site {0} {1})\n".format(robot, nextsite))
+            new_lines.append("    )\n")
             new_lines.append(")\n")
             new_lines.append(")")
             break

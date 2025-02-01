@@ -1,0 +1,8 @@
+<class_libraries>
+  <library path="arms_plan_solver">
+    <class name="plansys2/ARMSPlanSolver" type="plansys2::ARMSPlanSolver" base_class_type="plansys2::PlanSolverBase">
+      <description>Plan solver using ARMS solution and OPTIC with CPLEX for temporal planning in PlanSys2</description>
+    </class>
+  </library>
+</class_libraries>
+

@@ -23,54 +23,37 @@
 #include <fstream>
 
 #include "plansys2_msgs/msg/plan_item.hpp"
-#include "iros_plan_solver/iros_plan_solver.hpp"
+#include "arms_plan_solver/arms_plan_solver.hpp"
 #include "ament_index_cpp/get_package_share_directory.hpp"
 
 namespace plansys2
 {
-    IROSPlanSolver::IROSPlanSolver() {}
+    ARMSPlanSolver::ARMSPlanSolver() {}
 
     std::optional<std::filesystem::path>
-    IROSPlanSolver::create_folders(const std::string &node_namespace)
+    ARMSPlanSolver::create_folders(const std::string &node_namespace)
     {
-        auto output_dir = lc_node_->get_parameter(output_dir_parameter_name_).value_to_string();
+        const std::string base_dir = "/tmp/plan_output/";
 
-        // Handle home directory expansion
-        const char *home_dir = std::getenv("HOME");
-        if (output_dir[0] == '~' && home_dir)
-        {
-            output_dir.replace(0, 1, home_dir);
-        }
-        else if (!home_dir)
-        {
-            RCLCPP_ERROR(lc_node_->get_logger(), "Invalid use of the ~ character in the path: %s", output_dir.c_str());
+        // Directories to be created
+        const std::vector<std::string> subdirs = {"", "subproblems/", "subproblems/navigation/"};
+
+        try {
+            for (const auto &subdir : subdirs) {
+                std::filesystem::path dir_path = base_dir + subdir;
+                if (!std::filesystem::exists(dir_path)) {
+                    std::filesystem::create_directories(dir_path);
+                }
+            }
+        } catch (const std::filesystem::filesystem_error &err) {
+            RCLCPP_ERROR(lc_node_->get_logger(), "Error creating directories: %s", err.what());
             return std::nullopt;
         }
 
-        auto output_path = std::filesystem::path(output_dir);
-        if (node_namespace != "")
-        {
-            for (auto p : std::filesystem::path(node_namespace))
-            {
-                if (p != std::filesystem::current_path().root_directory())
-                {
-                    output_path /= p;
-                }
-            }
-            try
-            {
-                std::filesystem::create_directories(output_path);
-            }
-            catch (std::filesystem::filesystem_error &err)
-            {
-                RCLCPP_ERROR(lc_node_->get_logger(), "Error creating directories: %s", err.what());
-                return std::nullopt;
-            }
-        }
-        return output_path;
+        return std::filesystem::path(base_dir);
     }
 
-    void IROSPlanSolver::configure(
+    void ARMSPlanSolver::configure(
         rclcpp_lifecycle::LifecycleNode::SharedPtr lc_node,
         const std::string &plugin_name)
     {
@@ -84,7 +67,7 @@ namespace plansys2
             output_dir_parameter_name_, std::filesystem::temp_directory_path());
     }
 
-    std::optional<plansys2_msgs::msg::Plan>IROSPlanSolver::getPlan(
+    std::optional<plansys2_msgs::msg::Plan>ARMSPlanSolver::getPlan(
         const std::string &domain, const std::string &problem,
         const std::string &node_namespace,
         const rclcpp::Duration solver_timeout)
@@ -104,8 +87,8 @@ namespace plansys2
         RCLCPP_INFO(lc_node_->get_logger(), "Output directory: %s", output_dir.string().c_str());
 
         // Write domain and problem files
-        const auto domain_file_path = output_dir / "domain.pddl";
-        const auto problem_file_path = output_dir / "problem.pddl";
+        const auto domain_file_path =  "/tmp/domain.pddl";
+        const auto problem_file_path = "/tmp/problem.pddl";
 
         
         std::ofstream domain_out(domain_file_path);
@@ -119,14 +102,14 @@ namespace plansys2
         domain_out << domain;
         problem_out << problem;
         // Log the domain and problem names and their contents
-        RCLCPP_INFO(lc_node_->get_logger(), "Domain file: %s", domain_file_path.string().c_str());
+        RCLCPP_INFO(lc_node_->get_logger(), "Domain file: %s", domain_file_path);
         // RCLCPP_INFO(lc_node_->get_logger(), "Domain content:\n%s", domain.c_str());
-        RCLCPP_INFO(lc_node_->get_logger(), "Problem file: %s", problem_file_path.string().c_str());
+        RCLCPP_INFO(lc_node_->get_logger(), "Problem file: %s", problem_file_path);
         // RCLCPP_INFO(lc_node_->get_logger(), "Problem content:\n%s", problem.c_str());
         
 
         // Define the path to the Python script
-        const std::string script_path = ament_index_cpp::get_package_share_directory("iros_plan_solver") + "/scripts/solve_problem.py";
+        const std::string script_path = ament_index_cpp::get_package_share_directory("arms_plan_solver") + "/scripts/solve_problem.py";
 
         if (!std::filesystem::exists(script_path)) {
             RCLCPP_ERROR(lc_node_->get_logger(), "Script not found at path: %s", script_path.c_str());
@@ -134,13 +117,15 @@ namespace plansys2
         }
 
         // Execute the Python script
-        const auto plan_file_path = output_dir / "plan_result.txt";
+        // const auto plan_file_path = output_dir / "plan_output/plan_result.txt";
+        const auto result_file_path = output_dir / "arms_result.txt";
         const std::string command = "python3 " + script_path + " " +
-                                    domain_file_path.string() + " " +
-                                    problem_file_path.string() + " " +
+                                    domain_file_path + " " +
+                                    problem_file_path + " " +
                                     "2" +
-                                    " > " + plan_file_path.string();
+                                    " > " + result_file_path.string();
 
+        
         RCLCPP_INFO(lc_node_->get_logger(), "Executing command: %s", command.c_str());
 
         const int status = system(command.c_str());
@@ -149,6 +134,7 @@ namespace plansys2
             return {};
         }
 
+        const auto plan_file_path = output_dir / "mergedplan.txt";
         // Parse the result file
         plansys2_msgs::msg::Plan plan;
         std::ifstream plan_file(plan_file_path);
@@ -158,13 +144,8 @@ namespace plansys2
         }
 
         std::string line;
-        bool solution_found = false;
         while (std::getline(plan_file, line)) {
-            if (!solution_found) {
-                if (line.find("Solution Found") != std::string::npos) {
-                    solution_found = true;
-                }
-            } else if (!line.empty() && line.front() != ';') {
+            if (!line.empty() && line.front() != ';') {
                 plansys2_msgs::msg::PlanItem item;
 
                 // Parse plan line: Time: Action [Duration]
@@ -184,7 +165,7 @@ namespace plansys2
             }
         }
 
-        if (plan.items.empty() || !solution_found) {
+        if (plan.items.empty()) {
             RCLCPP_ERROR(lc_node_->get_logger(), "No valid solution found in the plan.");
             return {};
         }
@@ -195,7 +176,7 @@ namespace plansys2
 
 
     bool
-    IROSPlanSolver::isDomainValid(
+    ARMSPlanSolver::isDomainValid(
     const std::string & domain,
     const std::string & node_namespace)
     {
@@ -255,4 +236,4 @@ namespace plansys2
 }
 
 #include "pluginlib/class_list_macros.hpp"
-PLUGINLIB_EXPORT_CLASS(plansys2::IROSPlanSolver, plansys2::PlanSolverBase);
+PLUGINLIB_EXPORT_CLASS(plansys2::ARMSPlanSolver, plansys2::PlanSolverBase);

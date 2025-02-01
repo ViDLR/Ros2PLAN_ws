@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef PLANSYS2_IROS_PLAN_SOLVER__IROS_PLAN_SOLVER_HPP_
-#define PLANSYS2_IROS_PLAN_SOLVER__IROS_PLAN_SOLVER_HPP_
+#ifndef PLANSYS2_ARMS_PLAN_SOLVER__ARMS_PLAN_SOLVER_HPP_
+#define PLANSYS2_ARMS_PLAN_SOLVER__ARMS_PLAN_SOLVER_HPP_
 
 #include <filesystem>
 #include <optional>
@@ -28,7 +28,7 @@ using std::chrono_literals::operator""s;
 namespace plansys2
 {
 
-class IROSPlanSolver : public PlanSolverBase
+class ARMSPlanSolver : public PlanSolverBase
 {
 private:
   std::string arguments_parameter_name_;
@@ -36,7 +36,7 @@ private:
   rclcpp_lifecycle::LifecycleNode::SharedPtr lc_node_;
 
 public:
-  IROSPlanSolver();
+  ARMSPlanSolver();
 
   std::optional<std::filesystem::path> create_folders(const std::string & node_namespace);
 
@@ -54,4 +54,4 @@ public:
 
 }  // namespace plansys2
 
-#endif  // PLANSYS2_IROS_PLAN_SOLVER__IROS_PLAN_SOLVER_HPP_
+#endif  // PLANSYS2_ARMS_PLAN_SOLVER__ARMS_PLAN_SOLVER_HPP_

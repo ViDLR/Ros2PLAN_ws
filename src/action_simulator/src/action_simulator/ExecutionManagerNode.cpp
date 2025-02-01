@@ -71,59 +71,47 @@ void ExecutionManagerNode::publish_world_info(const std::string &file_path)
         RCLCPP_INFO(this->get_logger(), "WorldInfo message published successfully.");
 }
 
-// void ExecutionManagerNode::setup_knowledge(const std::string &file_path)
-// {
-//     RCLCPP_INFO(this->get_logger(), "Loading knowledge from file: %s", file_path.c_str());
 
-//     problem_client_->clearKnowledge();
-//     RCLCPP_INFO(this->get_logger(), "Cleared existing knowledge base.");
 
-//     std::ifstream file(file_path);
-//     if (!file.is_open()) {
-//         RCLCPP_ERROR(this->get_logger(), "Failed to open knowledge setup file: %s", file_path.c_str());
-//         return;
-//     }
+void ExecutionManagerNode::load_and_save_world_info(const std::string &problem_info_path) 
+{
+    RCLCPP_INFO(this->get_logger(), "Loading WorldInfo from JSON file: %s", problem_info_path.c_str());
 
-//     std::string line;
-//     while (std::getline(file, line)) {
-//         RCLCPP_INFO(this->get_logger(), "Processing line: %s", line.c_str());
-//         std::istringstream iss(line);
-//         std::string command;
-//         iss >> command;
+    // Read JSON file
+    std::ifstream file(problem_info_path);
+    if (!file.is_open()) {
+        RCLCPP_ERROR(this->get_logger(), "Failed to open world_info.json file: %s", problem_info_path.c_str());
+        return;
+    }
 
-//         if (command == "set") {
-//             std::string type;
-//             iss >> type;
-//             if (type == "instance") {
-//                 std::string name, category;
-//                 iss >> name >> category;
-//                 RCLCPP_INFO(this->get_logger(), "Adding instance: %s, %s", name.c_str(), category.c_str());
-//                 problem_client_->addInstance(plansys2::Instance(name, category));
-//             } else if (type == "predicate") {
-//                 std::string predicate;
-//                 std::getline(iss, predicate);
-//                 predicate = "(" + predicate.substr(predicate.find('(') + 1);
-//                 RCLCPP_INFO(this->get_logger(), "Adding predicate: %s", predicate.c_str());
-//                 problem_client_->addPredicate(plansys2::Predicate(predicate));
-//             } else if (type == "function") {
-//                 std::string function;
-//                 std::getline(iss, function);
-//                 RCLCPP_INFO(this->get_logger(), "Adding function: %s", function.c_str());
-//                 problem_client_->addFunction(plansys2::Function(function));
-//             } else if (type == "goal") {
-//                 std::string goal;
-//                 std::getline(iss, goal);
-//                 RCLCPP_INFO(this->get_logger(), "Setting goal: %s", goal.c_str());
-//                 problem_client_->setGoal(plansys2::Goal(goal));
-//             } else {
-//                 RCLCPP_WARN(this->get_logger(), "Unknown command type: %s", type.c_str());
-//             }
-//         }
-//     }
+    nlohmann::json world_data;
+    try {
+        file >> world_data;
+    } catch (const std::exception &e) {
+        RCLCPP_ERROR(this->get_logger(), "Error parsing JSON file: %s", e.what());
+        return;
+    }
+    file.close();
 
-//     file.close();
-//     RCLCPP_INFO(this->get_logger(), "Knowledge successfully loaded from %s", file_path.c_str());
-// }
+    // Save the JSON data to /tmp/worldinfo.json
+    const std::string tmp_file_path = "/tmp/world_info.json";
+    std::ofstream tmp_file(tmp_file_path);
+    if (!tmp_file.is_open()) {
+        RCLCPP_ERROR(this->get_logger(), "Failed to write JSON file to: %s", tmp_file_path.c_str());
+        return;
+    }
+
+    try {
+        tmp_file << world_data.dump(4);  // Pretty print with 4-space indentation
+        RCLCPP_INFO(this->get_logger(), "WorldInfo JSON successfully saved to: %s", tmp_file_path.c_str());
+    } catch (const std::exception &e) {
+        RCLCPP_ERROR(this->get_logger(), "Error writing to JSON file: %s", e.what());
+        return;
+    }
+    tmp_file.close();
+
+}
+
 
 
 // void ExecutionManagerNode::Analyze_Plan(const std::string &file_path)
@@ -207,9 +195,17 @@ void ExecutionManagerNode::createExecutorClient(const std::string &team_name) {
     }
 
     RCLCPP_INFO(this->get_logger(), "Creating executor client for team '%s'.", team_name.c_str());
-    executor_clients_[team_name] = std::make_shared<plansys2::ExecutorClient>(team_name);
+
+    // Corrected: Store the created ExecutorClient in the map
+    executor_clients_[team_name] = std::make_shared<plansys2::ExecutorClient>(
+        "executor_client_" + team_name,  // Node name
+        team_name,                        // Namespace
+        "executor_" + team_name           // Executor name
+    );
+
     RCLCPP_INFO(this->get_logger(), "Executor client for team '%s' created successfully.", team_name.c_str());
 }
+
 
 void ExecutionManagerNode::removeExecutorClient(const std::string &team_name) {
     if (executor_clients_.count(team_name) == 0) {
@@ -228,12 +224,13 @@ bool ExecutionManagerNode::hasExecutorClient(const std::string &team_name) const
 void ExecutionManagerNode::addExecutorClients(const std::vector<plansys2_msgs::msg::Team> &teams) {
     for (const auto &team : teams) {
         if (!hasExecutorClient(team.name)) {
-            createExecutorClient(team.name);
+            createExecutorClient(team.name);  // Now correctly storing in `executor_clients_`
         } else {
             RCLCPP_INFO(this->get_logger(), "Executor client for team '%s' already exists. No action taken.", team.name.c_str());
         }
     }
 }
+
 
 void ExecutionManagerNode::removeExecutorClients(const std::vector<std::string> &team_names) {
     for (const auto &team_name : team_names) {
@@ -264,6 +261,9 @@ void ExecutionManagerNode::ExecutionSequenceFunction()
 
     problem_client_->addProblem(problem_str);
 
+    // Load the problem state from a json file
+    load_and_save_world_info("src/my_examples/plansys2_testexample/pddl/world_info.json");
+
     RCLCPP_INFO(this->get_logger(), "Activating ExecutionManagerNode...");
 
     // Fetch and analyze the plan
@@ -285,13 +285,8 @@ void ExecutionManagerNode::ExecutionSequenceFunction()
     std::vector<plansys2_msgs::msg::Team> teams;
     plansys2_msgs::msg::Team team1;
     team1.name = "team1";
-    team1.robots = {"robot0", "robot1"};
+    team1.robots = {"robot0", "robot1", "robot2", "robot3"};
     teams.push_back(team1);
-    plansys2_msgs::msg::Team team2;
-    team2.name = "team2";
-    team2.robots = {"robot2", "robot3"};
-    teams.push_back(team2);
-
     // Call the /start_teams service of TLCMN for starting teams
     RCLCPP_INFO(this->get_logger(), "Calling the team creation client...");
     auto start_teams_client = this->create_client<StartTeams>(
@@ -323,55 +318,49 @@ void ExecutionManagerNode::ExecutionSequenceFunction()
     }
 
     RCLCPP_INFO(this->get_logger(), "Teams successfully started: %s", response->message.c_str());
-
-    
-    
-        
+     
 
     // Create callbacks and executor clients for the teams if they dont exist
     addExecutorCallbacks(teams);
-    // addExecutorClients(teams);
+    addExecutorClients(teams);
 
     // Feed the teams with the world information (problem information)
     publish_world_info("/home/virgile/PHD/Ros2PLAN_ws/src/my_examples/plansys2_testexample/pddl/world_info.json");
 
-    // Simplify for team1 only
-    auto executor_client1 = std::make_shared<plansys2::ExecutorClient>(
-  "executor_client_team1", "team1", "executor_team1");
+    //     // Simplify for team1 only
+    //     auto executor_client1 = std::make_shared<plansys2::ExecutorClient>(
+    //   "executor_client_team1", "team1", "executor_team1");
+    //     RCLCPP_INFO(this->get_logger(), "Creating Executor Client for team1...");
+    //     RCLCPP_INFO(this->get_logger(), "Executor Client for '/team1/executor_team1' is ready.");
+    //     // Store in a temporary map or variable
+    //     executor_clients_["team1"] = executor_client1;
+    //     // Start executor cients
+    //     executor_client1 -> start_plan_execution(plan.value());
+    
 
+    // Start plan execution for each team
+    for (const auto &team : teams) {
+        if (executor_clients_.count(team.name) > 0) {
+            auto client = executor_clients_[team.name];
 
-    RCLCPP_INFO(this->get_logger(), "Creating Executor Client for team1...");
+            RCLCPP_INFO(this->get_logger(), "Starting execution for team '%s'.", team.name.c_str());
 
-    RCLCPP_INFO(this->get_logger(), "Executor Client for '/team1/executor_team1' is ready.");
+            // Log the plan details before starting execution
+            RCLCPP_INFO(this->get_logger(), "Publishing plan to team '%s':", team.name.c_str());
+            for (const auto &action : plan.value().items) {
+                RCLCPP_INFO(this->get_logger(), "Action: [%s] Start: %f Duration: %f",
+                            action.action.c_str(), action.time, action.duration);
+            }
 
-    // Store in a temporary map or variable
-    executor_clients_["team1"] = executor_client1;
+            // Attempt to start plan execution
+            if (!client->start_plan_execution(plan.value())) {
+                RCLCPP_ERROR(this->get_logger(), "Failed to start execution for team '%s'.", team.name.c_str());
+            }
+        } else {
+            RCLCPP_WARN(this->get_logger(), "Executor client for team '%s' does not exist. Cannot start execution.", team.name.c_str());
+        }
+    }
 
-    executor_client1 -> start_plan_execution(plan.value());
-    // Start executor cients
-
-    // // Start plan execution for each team
-    // for (const auto &team : teams) {
-    //     if (executor_clients_.count(team.name) > 0) {
-    //         auto client = executor_clients_[team.name];
-
-    //         RCLCPP_INFO(this->get_logger(), "Starting execution for team '%s'.", team.name.c_str());
-
-    //         // Log the plan details before starting execution
-    //         RCLCPP_INFO(this->get_logger(), "Publishing plan to team '%s':", team.name.c_str());
-    //         for (const auto &action : plan.value().items) {
-    //             RCLCPP_INFO(this->get_logger(), "Action: [%s] Start: %f Duration: %f",
-    //                         action.action.c_str(), action.time, action.duration);
-    //         }
-
-    //         // Attempt to start plan execution
-    //         if (!client->start_plan_execution(plan.value())) {
-    //             RCLCPP_ERROR(this->get_logger(), "Failed to start execution for team '%s'.", team.name.c_str());
-    //         }
-    //     } else {
-    //         RCLCPP_WARN(this->get_logger(), "Executor client for team '%s' does not exist. Cannot start execution.", team.name.c_str());
-    //     }
-    // }
 
 
 }

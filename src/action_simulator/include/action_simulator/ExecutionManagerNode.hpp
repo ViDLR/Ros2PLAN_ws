@@ -8,6 +8,7 @@
 #include "plansys2_problem_expert/ProblemExpertClient.hpp"
 #include "plansys2_executor/ExecutorClient.hpp"
 #include "plansys2_planner/PlannerClient.hpp"
+#include <plansys2_msgs/msg/world_info.hpp>
 #include "plansys2_msgs/msg/action_execution.hpp"
 #include <nlohmann/json.hpp>
 #include "plansys2_msgs/msg/world_info.hpp"
@@ -29,7 +30,7 @@ private:
     void ExecutionSequenceFunction(); 
     // void setup_knowledge(const std::string &filename); 
     // void create_and_launch_teams();
-    // void publish_world_info(const std::string &file_path);
+    void load_and_save_world_info(const std::string &problem_info_path);
     void publish_world_info(const std::string &file_path);
     void createExecutorCallback(const std::string &team_name);
     void removeExecutorCallback(const std::string &team_name);

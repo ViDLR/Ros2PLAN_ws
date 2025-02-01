@@ -1,9 +1,9 @@
 <?xml version="1.0"?>
 <package format="3">
-  <name>iros_plan_solver</name>
+  <name>arms_plan_solver</name>
   <version>0.0.1</version>
   
-  <description>IROS Plan Solver Plugin for PlanSys2</description>
+  <description>ARMS Plan Solver Plugin for PlanSys2</description>
 
   <maintainer email="virgile.dlr@protonmail.com">Virgile de La Rochefoucauld</maintainer>
 
@@ -20,7 +20,7 @@
 
   <export>
     <build_type>ament_cmake</build_type>
-    <plansys2_core plugin="${prefix}/iros_plan_solver_plugin.xml" />
+    <plansys2_core plugin="${prefix}/arms_plan_solver_plugin.xml" />
   </export>
 </package>
 
