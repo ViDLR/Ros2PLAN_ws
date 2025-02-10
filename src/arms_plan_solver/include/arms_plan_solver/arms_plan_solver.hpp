@@ -47,6 +47,13 @@ public:
     const std::string & node_namespace = "",
     const rclcpp::Duration solver_timeout = 15s);
 
+  std::vector<plansys2_msgs::msg::Plan> getMultiPathPlan(
+    const std::string &domain, const std::string &problem,
+    const std::string &node_namespace= "", 
+    const rclcpp::Duration solver_timeout = 15s,
+    const std::string &mode = "full", 
+    const std::vector<std::string> &paths = {"path1"});
+
   bool isDomainValid(
     const std::string & domain,
     const std::string & node_namespace = "");

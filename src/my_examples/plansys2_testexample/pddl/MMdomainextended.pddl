@@ -482,7 +482,7 @@ site
 		(over all (water ?poi))
 		(over all (sample_poi ?poi))
 		(over all (partofsite ?poi ?s))
-		(over all (connected ?s))
+		(at start (connected ?s))
 		; (at start (>= (energy ?r) (+(* (assesscost ?r) 60) (*(maintainconsumption_water ?r) 60)) ))
 	)
 	:effect (and

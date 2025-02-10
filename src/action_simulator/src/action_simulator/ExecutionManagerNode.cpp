@@ -113,26 +113,79 @@ void ExecutionManagerNode::load_and_save_world_info(const std::string &problem_i
 }
 
 
+void ExecutionManagerNode::parseArmsResult(const std::string &file_path, 
+                                           const std::vector<plansys2_msgs::msg::Plan> &plans) {
+    std::ifstream file(file_path);
+    if (!file.is_open()) {
+        RCLCPP_ERROR(this->get_logger(), "Failed to open ARMS result file: %s", file_path.c_str());
+        return;
+    }
 
-// void ExecutionManagerNode::Analyze_Plan(const std::string &file_path)
-// {
-//     std::vector<plansys2_msgs::msg::Team> ExecutionManagerNode::analyzePlan() {
-//     // Placeholder logic for analyzing the plan and allocating teams
-//     std::vector<plansys2_msgs::msg::Team> teams;
+    std::string line;
+    std::vector<std::string> team_names;
+    std::map<std::string, std::vector<std::string>> robot_paths;
+    std::map<std::string, std::vector<std::string>> site_paths;
+    std::map<std::string, std::vector<std::string>> dependencies;
+    
+    while (std::getline(file, line)) {
+        if (line.rfind("path", 0) == 0) {  // Detect path lines
+            std::stringstream ss(line);
+            std::string label;
+            int path_index;
+            ss >> label >> path_index;  // Read "path X"
 
-//     plansys2_msgs::msg::Team team1;
-//     team1.name = "team1";
-//     team1.robots = {"robot1", "robot2"};
-//     teams.push_back(team1);
+            std::vector<std::string> sites;
+            std::string site;
+            while (ss >> site && site != "robots:") {
+                sites.push_back(site);
+            }
 
-//     plansys2_msgs::msg::Team team2;
-//     team2.name = "team2";
-//     team2.robots = {"robot3", "robot4"};
-//     teams.push_back(team2);
+            std::vector<std::string> robots;
+            std::string robot;
+            while (ss >> robot) {
+                robots.push_back(robot);
+            }
+            
+            std::string team_name = "team" + std::to_string(path_index);
+            team_names.push_back(team_name);
+            site_paths[team_name] = sites;
+            robot_paths[team_name] = robots;
+        } else if (line.rfind("depends", 0) == 0) {  // Detect dependency lines
+            std::stringstream ss(line);
+            std::string label, dependent, dependency;
+            ss >> label >> dependent >> dependency;  // Read "depends pathX pathY"
+            dependencies[dependent].push_back(dependency);
+        }
+    }
+    
+    file.close();
 
-//     return teams;
-//     }
-// }
+    // Assign dependencies
+    for (const auto &entry : dependencies) {
+        stn_controller_->path_dependencies_[entry.first] = entry.second;
+    }
+
+    // Logging parsed paths and creating teams
+    for (size_t i = 0; i < team_names.size() && i < plans.size(); ++i) {
+        const std::string &team_name = team_names[i];
+        const std::vector<std::string> &robots = robot_paths[team_name];
+        const std::vector<std::string> &sites = site_paths[team_name];
+
+        plansys2_msgs::msg::Team team;
+        team.name = team_name;
+        team.robots = robots;
+        active_teams.push_back(team);
+
+        teams_plans[team_name] = plans[i];
+
+        RCLCPP_INFO(this->get_logger(), "Created Team: %s | Robots: [%s] | Sites: [%s] | Plan assigned",
+                    team_name.c_str(),
+                    fmt::format("{}", fmt::join(robots, ", ")).c_str(),
+                    fmt::format("{}", fmt::join(sites, ", ")).c_str());
+    }
+}
+
+
 
 
 // Callbackcreation and disposition 
@@ -175,9 +228,9 @@ bool ExecutionManagerNode::hasExecutorCallback(const std::string &team_name) con
     return executor_callbacks_.count(team_name) > 0;
 }
 
-void ExecutionManagerNode::addExecutorCallbacks(const std::vector<plansys2_msgs::msg::Team> &teams) {
+void ExecutionManagerNode::addExecutorCallbacks(const std::vector<plansys2_msgs::msg::Team> &active_teams) {
     
-    for (const auto &team : teams) {
+    for (const auto &team : active_teams) {
         if (!hasExecutorCallback(team.name)) {
             createExecutorCallback(team.name);  // Create a callback for the team
         } else {
@@ -231,6 +284,56 @@ void ExecutionManagerNode::addExecutorClients(const std::vector<plansys2_msgs::m
     }
 }
 
+void ExecutionManagerNode::executionFeedbackCallback(const std::string &team_name, float progress) {
+    stn_controller_->trackExecutionProgress(team_name, "placeholdersite",progress);
+    
+    if (progress >= 1.0) {
+        RCLCPP_INFO(this->get_logger(), "Team '%s' completed execution.", team_name.c_str());
+    }
+
+    startPlanExecution();
+}
+
+void ExecutionManagerNode::handleFailure(const std::string& team_name) {
+    RCLCPP_WARN(this->get_logger(), "Handling failure for team '%s'.", team_name.c_str());
+
+    validateFailureImpact(team_name);
+    stn_controller_->handleFailure(team_name);
+}
+
+void ExecutionManagerNode::propagateDelay(const std::string& team_name, float delay) {
+    RCLCPP_WARN(this->get_logger(), "Propagating delay of %f seconds in team '%s'.", delay, team_name.c_str());
+
+    stn_controller_->propagateDelay(team_name, delay);
+
+    for (const auto &dep : stn_controller_->path_dependencies_[team_name]) {
+        RCLCPP_WARN(this->get_logger(), "Delaying dependent path '%s' due to delay in '%s'.", dep.c_str(), team_name.c_str());
+    }
+}
+
+
+void ExecutionManagerNode::validateFailureImpact(const std::string& team_name) {
+    std::string validator_cmd = "./val-exec /tmp/validator/subproblems/" + team_name + ".pddl";
+    int result = std::system(validator_cmd.c_str());
+
+    if (result == 0) {
+        RCLCPP_WARN(this->get_logger(), "Failure in '%s' does not affect other paths. Adapting locally.", team_name.c_str());
+        startPlanExecution();
+    } else {
+        RCLCPP_ERROR(this->get_logger(), "Failure in '%s' requires global replanning.", team_name.c_str());
+        
+        std::vector<std::string> affected_paths = {team_name};
+        std::string replan_mode = "incremental";
+        
+        auto domain = domain_client_->getDomain();
+        auto problem = problem_client_->getProblem();
+        auto plans = planner_client_->getMultiPathPlan(domain, problem, "", 15s, replan_mode, affected_paths);
+        
+        parseArmsResult("/tmp/plan_output/arms_result.txt", plans);
+        startPlanExecution();
+    }
+}
+
 
 void ExecutionManagerNode::removeExecutorClients(const std::vector<std::string> &team_names) {
     for (const auto &team_name : team_names) {
@@ -238,8 +341,37 @@ void ExecutionManagerNode::removeExecutorClients(const std::vector<std::string> 
     }
 }
 
+// void ExecutionManagerNode::initializeSTN() {
+//     stn_controller = st
+// }
 
-// Main ExecutionSequenceFunction
+
+void ExecutionManagerNode::startPlanExecution() {
+    for (const auto &team : active_teams) {
+        if (!executor_clients_.count(team.name)) {
+            RCLCPP_WARN(this->get_logger(), "No executor client for '%s'.", team.name.c_str());
+            continue;
+        }
+
+        if (!stn_controller_->isPathReady(team.name)) {
+            RCLCPP_WARN(this->get_logger(), "Team '%s' is waiting on dependencies.", team.name.c_str());
+            continue;
+        }
+
+        auto client = executor_clients_[team.name];
+        RCLCPP_INFO(this->get_logger(), "Starting execution for team '%s'.", team.name.c_str());
+
+        auto team_plan = teams_plans[team.name];
+
+        if (!client->start_plan_execution(team_plan)) {
+            RCLCPP_ERROR(this->get_logger(), "Failed to start execution for '%s'.", team.name.c_str());
+        } else {
+            stn_controller_->trackExecutionProgress(team.name, "placeholdersite", 0.1);
+        }
+    }
+}
+
+
 void ExecutionManagerNode::ExecutionSequenceFunction()
 {
     RCLCPP_INFO(this->get_logger(), "Starting ExecutionSequenceFunction ...");
@@ -250,7 +382,7 @@ void ExecutionManagerNode::ExecutionSequenceFunction()
     problem_client_ = std::make_shared<plansys2::ProblemExpertClient>();
 
     // Load the problem from a .pddl file
-    std::ifstream problem_file("src/my_examples/plansys2_testexample/pddl/MMtest.pddl");
+    std::ifstream problem_file("src/my_examples/plansys2_testexample/pddl/problem_hightest.pddl");
     if (!problem_file.is_open()) {
         RCLCPP_ERROR(this->get_logger(), "Failed to open problem file.");
         throw std::runtime_error("Problem file load failed");
@@ -261,36 +393,52 @@ void ExecutionManagerNode::ExecutionSequenceFunction()
 
     problem_client_->addProblem(problem_str);
 
-    // Load the problem state from a json file
+    // Load the problem state from a JSON file
     load_and_save_world_info("src/my_examples/plansys2_testexample/pddl/world_info.json");
 
     RCLCPP_INFO(this->get_logger(), "Activating ExecutionManagerNode...");
 
+    // Multi-path plan request
+    std::string replan_mode = "full";  // Can be 'full' or 'incremental'
+    std::vector<std::string> affected_paths = {"path1", "path2", "path3", "path4", "path5"};
+
     // Fetch and analyze the plan
     auto domain = domain_client_->getDomain();
     auto problem = problem_client_->getProblem();
-    auto plan = planner_client_->getPlan(domain, problem);
+    // Fetch multi-path plans from the planner
+    std::vector<plansys2_msgs::msg::Plan> plans = planner_client_->getMultiPathPlan(
+        domain, problem, "", 15s, replan_mode, affected_paths);
 
-    if (!plan.has_value()) {
-        RCLCPP_ERROR(this->get_logger(), "Failed to fetch plan.");
+    if (plans.empty()) {
+        RCLCPP_ERROR(this->get_logger(), "Failed to fetch multi-path plans.");
         return;
     }
 
-    RCLCPP_INFO(this->get_logger(), "Plan fetched with %lu actions.", plan->items.size());
+    RCLCPP_INFO(this->get_logger(), "Fetched %lu path-specific plans.", plans.size());
 
-    // Simulated output of Analyze_Plan (Team and robot repartition)
-    // std::vector<plansys2_msgs::msg::Team> teams = Analyze_Plan()
+    // Parse ARMS result and distribute plans
+    parseArmsResult("/tmp/plan_output/arms_result.txt", plans);
 
-    // Testing for analyze plan teams output
-    std::vector<plansys2_msgs::msg::Team> teams;
-    plansys2_msgs::msg::Team team1;
-    team1.name = "team1";
-    team1.robots = {"robot0", "robot1", "robot2", "robot3"};
-    teams.push_back(team1);
+    // Intialize the STN temporal controller
+    stn_controller_ = std::make_shared<STNController>();
+    stn_controller_->initializePaths(active_teams, teams_plans);
+
+    // Simulated example teams matching the paths
+    // std::vector<plansys2_msgs::msg::Team> teams;
+    // std::map<std::string, plansys2_msgs::msg::Plan> teams_plans; // Map team to its corresponding plan
+
+    // std::vector<std::string> team_names = {"team1", "team2", "team3", "team4", "team5"};
+    // for (size_t i = 0; i < team_names.size() && i < plans.size(); ++i) {
+    //     plansys2_msgs::msg::Team team;
+    //     team.name = team_names[i];
+    //     team.robots = {"robot" + std::to_string(i * 2), "robot" + std::to_string(i * 2 + 1)};
+    //     teams.push_back(team);
+    //     teams_plans[team.name] = plans[i]; // Assign the correct plan to the corresponding team
+    // }
+
     // Call the /start_teams service of TLCMN for starting teams
     RCLCPP_INFO(this->get_logger(), "Calling the team creation client...");
-    auto start_teams_client = this->create_client<StartTeams>(
-    "/start_teams");
+    auto start_teams_client = this->create_client<StartTeams>("/start_teams");
 
     if (!start_teams_client->wait_for_service(20s)) {
         RCLCPP_ERROR(this->get_logger(), "/start_teams service not available");
@@ -298,7 +446,7 @@ void ExecutionManagerNode::ExecutionSequenceFunction()
     }
 
     auto request = std::make_shared<StartTeams::Request>();
-    request->teams = teams;
+    request->teams = active_teams;
 
     auto future = start_teams_client->async_send_request(request);
 
@@ -318,50 +466,13 @@ void ExecutionManagerNode::ExecutionSequenceFunction()
     }
 
     RCLCPP_INFO(this->get_logger(), "Teams successfully started: %s", response->message.c_str());
-     
 
-    // Create callbacks and executor clients for the teams if they dont exist
-    addExecutorCallbacks(teams);
-    addExecutorClients(teams);
+    // Create callbacks and executor clients for the teams if they don’t exist
+    addExecutorCallbacks(active_teams);
+    addExecutorClients(active_teams);
 
     // Feed the teams with the world information (problem information)
-    publish_world_info("/home/virgile/PHD/Ros2PLAN_ws/src/my_examples/plansys2_testexample/pddl/world_info.json");
-
-    //     // Simplify for team1 only
-    //     auto executor_client1 = std::make_shared<plansys2::ExecutorClient>(
-    //   "executor_client_team1", "team1", "executor_team1");
-    //     RCLCPP_INFO(this->get_logger(), "Creating Executor Client for team1...");
-    //     RCLCPP_INFO(this->get_logger(), "Executor Client for '/team1/executor_team1' is ready.");
-    //     // Store in a temporary map or variable
-    //     executor_clients_["team1"] = executor_client1;
-    //     // Start executor cients
-    //     executor_client1 -> start_plan_execution(plan.value());
-    
-
-    // Start plan execution for each team
-    for (const auto &team : teams) {
-        if (executor_clients_.count(team.name) > 0) {
-            auto client = executor_clients_[team.name];
-
-            RCLCPP_INFO(this->get_logger(), "Starting execution for team '%s'.", team.name.c_str());
-
-            // Log the plan details before starting execution
-            RCLCPP_INFO(this->get_logger(), "Publishing plan to team '%s':", team.name.c_str());
-            for (const auto &action : plan.value().items) {
-                RCLCPP_INFO(this->get_logger(), "Action: [%s] Start: %f Duration: %f",
-                            action.action.c_str(), action.time, action.duration);
-            }
-
-            // Attempt to start plan execution
-            if (!client->start_plan_execution(plan.value())) {
-                RCLCPP_ERROR(this->get_logger(), "Failed to start execution for team '%s'.", team.name.c_str());
-            }
-        } else {
-            RCLCPP_WARN(this->get_logger(), "Executor client for team '%s' does not exist. Cannot start execution.", team.name.c_str());
-        }
-    }
-
-
+    publish_world_info("src/my_examples/plansys2_testexample/pddl/world_info.json");
 
 }
 

@@ -20,6 +20,8 @@ find_package(plansys2_executor REQUIRED)
 find_package(plansys2_lifecycle_manager REQUIRED)
 find_package(lifecycle_msgs REQUIRED)
 find_package(plansys2_executor REQUIRED)
+find_package(fmt REQUIRED)
+
 
 set(dependencies
   rclcpp
@@ -40,6 +42,7 @@ include_directories(include)
 set(SOURCES
   src/action_simulator/ExecutionManagerNode.cpp
   src/action_simulator_node.cpp
+  src/action_simulator/STNControllerNode.cpp
 )
 
 # Create shared library

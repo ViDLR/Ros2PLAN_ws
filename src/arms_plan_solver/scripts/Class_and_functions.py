@@ -628,169 +628,136 @@ def generateTMProblemPDDL(mission=Mission(sites=[],robots=[]), num=str()):
             f.write(line)
             f.write('\n')
 
+import os
 
-def generateNewMissionRobotProblems(site, folder):
-    """ Generate the Trans-Media problem as several sub-problems in PDDL script from mission scenario dataclass after clustering and assignement """
-
-    # # # Writing the PDDL file
-
-    # First lines for pddl files
-    # '; mission = {0}'.format(mission),
-    Debutlines = ['(define (problem TMMSproblemPREALLOC)', '(:domain MMdomainextended)']
-
-
-    # Objects definitions
-    objectlines = ['(:objects']
-    Sites, Poi, Robots = "", "", ""
-
-    for r in site.robots:
-        Robots += "{0} ".format(r.name)
-    Robots += "- robot "
-    objectlines.append('')
-    objectlines.append(Robots)
-
-    Sites += "{0} ".format(site.name)
-    for p in site.poi:
-        Poi += "{0} ".format(p.name)
-
-    Sites += "- site "
-    objectlines.append('')
-    objectlines.append(Sites)
-    Poi += "- pointofinterest "    
-    objectlines.append('')
-    objectlines.append(Poi)
-    objectlines.append('')
-    objectlines.append(')')
-
-    # initial state definitions
-
-    initstatelines = ['(:init \n','; Robot states \n']
-
-    for r in site.robots:
-        initstatelines.append('(at {0} {1})'.format(r.name,site.poi[0].name))
-        initstatelines.append('(at_site {0} {1})'.format(r.name,site.name))
-        # if r.medium==1:
-        initstatelines.append('(airconf {0})'.format(r.name))
-        
-        # elif r.medium == -1:
-        #     initstatelines.append('(waterconf {0})'.format(r.name))
-        # elif r.medium == 0:
-        #     initstatelines.append('(groundconf {0})'.format(r.name))
-
-        initstatelines.append('(available {0})'.format(r.name))
-        initstatelines.append('(canswitch {0})'.format(r.name))
-        initstatelines.append('(canrelay {0})'.format(r.name))
-        initstatelines.append('(cansample {0})'.format(r.name))
-        initstatelines.append('')
-
-    initstatelines.append('')
-
-    # sites location
-    initstatelines.append('; Poi/Sites states')
-
-    initstatelines.append('')
-    initstatelines.append(';{0}'.format(site.name))
-
-    for p in site.poi:
-        if p.typepoi == "transition":
-            initstatelines.append('(transition_poi {0})'.format(p.name))
-            initstatelines.append('(isswitchable {0})'.format(p.name))
-            initstatelines.append('(isrelay {0})'.format(p.name))
-            
-        elif p.typepoi == "survey":
-                initstatelines.append('(survey_poi {0})'.format(p.name))
-        else:
-            initstatelines.append('(sample_poi {0})'.format(p.name))
-
-        if 0 in p.mediums: 
-            initstatelines.append('(ground {0})'.format(p.name))
-        if -1 in p.mediums:
-            initstatelines.append('(water {0})'.format(p.name))
-        if 1 in p.mediums:
-            initstatelines.append('(air {0})'.format(p.name))
-
-        initstatelines.append('(partofsite {0} {1})'.format(p.name, site.name))
-        initstatelines.append('')
-
-    initstatelines.append('')
-    # Functions robot
-
-    initstatelines.append(';Functions')
-    initstatelines.append('')
-
-    for r in site.robots:
-        initstatelines.append(';{0}'.format(r.name))
-        initstatelines.append(';Speeds')
-        initstatelines.append('(= (speedair {0}) 1.5)'.format(r.name))
-        initstatelines.append('(= (speedwater {0}) 0.5)'.format(r.name))
-        initstatelines.append(';Energy')
-        initstatelines.append('(= (energy {0}) 1000000000)'.format(r.name))
-        initstatelines.append('(= (recharge_rate {0}) 10)'.format(r.name))
-        initstatelines.append(';Cost')
-        initstatelines.append('(= (assesscost {0}) 0.02)'.format(r.name))
-        initstatelines.append('(= (partassesscost {0}) 0.01)'.format(r.name))
-        initstatelines.append('(= (observecost {0}) 0.01)'.format(r.name))
-        initstatelines.append(';Consumption')
-        initstatelines.append('(= (maintainconsumption_water {0}) 0.02)'.format(r.name))
-        initstatelines.append('(= (maintainconsumption_air {0}) 0.08)'.format(r.name))
-        initstatelines.append('(= (navconsumption_water {0}) 0.5)'.format(r.name))
-        initstatelines.append('(= (navconsumption_air {0}) 0.8)'.format(r.name))
-        initstatelines.append(';Switch')
-        initstatelines.append('(= (switchduration_airwater {0}) 5)'.format(r.name))
-        initstatelines.append('(= (switchcost_airwater {0}) 20)'.format(r.name))
-        initstatelines.append('(= (takeoffduration_groundair {0}) 4)'.format(r.name))
-        initstatelines.append('(= (takeoffost_groundair {0}) 10)'.format(r.name))
-        initstatelines.append('(= (landingduration_airground {0}) 3)'.format(r.name))
-        initstatelines.append('(= (landingcost_airground {0}) 5)'.format(r.name))
-        initstatelines.append('(= (switchduration_waterair {0}) 8)'.format(r.name))
-        initstatelines.append('(= (switchcost_waterair {0}) 30)'.format(r.name))
-        initstatelines.append('')
-
-    initstatelines.append(';DistancesPoiSites')
-    initstatelines.append('')
-
-    initstatelines.append(';{0}'.format(site.name))
-    initstatelines.append('')
-    initstatelines.append('(= (site_size {0}) {1})'.format(site.name, site.size))
-    initstatelines.append('')
-
-    for onepoi in site.poi:
-        for twopoi in site.poi:
-            
-            if onepoi.name != twopoi.name:
-                if onepoi.typepoi =="transition" : 
-                    initstatelines.append('(= (distance {0} {1}) {2})'.format(onepoi.name,twopoi.name, distance(onepoi.loc,twopoi.loc)))
-                elif onepoi.typepoi =="sample" and (twopoi.typepoi == "transition" or twopoi.typepoi == "sample"):
-                    initstatelines.append('(= (distance {0} {1}) {2})'.format(onepoi.name,twopoi.name, distance(onepoi.loc,twopoi.loc)))
-                elif onepoi.typepoi =="survey" and (twopoi.typepoi == "transition" or twopoi.typepoi == "survey"):
-                    initstatelines.append('(= (distance {0} {1}) {2})'.format(onepoi.name,twopoi.name, distance(onepoi.loc,twopoi.loc)))
-
-        initstatelines.append('')
-
-    initstatelines.append('')
-    initstatelines.append(')')
-
-    # goal definitions
-    goallines = ['(:goal (and']
-
+def GenerateAdaptedProblem(previous_problem, robot_state, current_site, next_site):
+    """ 
+    Generate a sub-problem PDDL file for each robot following the mission scenario.
     
-    for p in site.poi:
-        # if p.name.startswith("sp"):
-        #     goallines.append('(part_assessed {0})'.format(p.name))
-        if p.typepoi == "sample":
-            goallines.append('(sampled {0})'.format(p.name))
+    This function modifies an existing PDDL problem file by:
+    - Keeping only the robots in `robot_state`
+    - Updating `at`, `at_site`, and `conf` predicates based on the `current_site`
+    - Modifying the `goal` to ensure the robots sample `next_site`
+    - Writing the new problem to `/tmp/subproblems/`
+    """
+    if "pddl" not in previous_problem:
+        previous_problem += ".pddl"
 
-    goallines.append(')')
-    goallines.append(')')
-    # writing the file
+    with open(previous_problem, 'r') as file:
+        lines = file.readlines()
 
-    totallines = Debutlines + objectlines + initstatelines + goallines
-    totallines.append(')')
+    new_lines = []
+    goal_added = False  # Flag to avoid adding `goal` multiple times
 
-    with open('{0}.pddl'.format(folder + "/" + site.name), 'w') as f:
-        for line in totallines:
-            f.write(line)
-            f.write('\n')
+    for line in lines:
+        line = line.strip()
+
+        # Modify the problem definition line (Ensure domain remains intact)
+        if "define" in line:
+            new_lines.append("(define (problem subp_{})\n".format(current_site.name + next_site.name))
+            continue 
+
+         # Handle point of interest definition
+        elif "- pointofinterest" in line:
+            tmpline = line.split(" ")
+            filtered_pois = [exp for exp in tmpline if any(exp == poi.name for poi in current_site.poi) or any(exp == poi.name for poi in next_site.poi)]
+            new_lines.append(" ".join(filtered_pois) + " - pointofinterest\n")
+            continue
+        
+        # Handle site definition
+        elif "- site" in line:
+            tmpline = line.split(" ")
+            filtered_sites = [exp for exp in tmpline if exp == current_site.name or exp == next_site.name]
+            new_lines.append(" ".join(filtered_sites) + " - site\n")
+            continue
+
+        # Handle robot definition
+        elif "- robot" in line:
+            tmpline = line.split(" ")
+            filtered_robots = [exp for exp in tmpline if exp in robot_state.keys()]
+            new_lines.append(" ".join(filtered_robots) + " - robot\n")
+            continue
+
+        # Process only relevant robot-related lines
+        elif "robot" in line:
+            if any(robot in line for robot in robot_state.keys()):
+                modified = False  # Flag to track if we modified the line
+                
+                for robot in robot_state.keys():
+                    if all(not v for v in robot_state.values()):
+                        if 'at {} '.format(robot) in line:
+                            new_lines.append("( at {0} cp{1} )\n".format(robot, current_site.name))
+                            modified = True
+                        elif 'at_site {} '.format(robot) in line:
+                            new_lines.append("( at_site {0} {1} )\n".format(robot, current_site.name))
+                            modified = True
+                        elif 'conf {} '.format(robot) in line:
+                            if current_site.name == "base":
+                                new_lines.append("( groundconf {0} )\n".format(robot))
+                            else:
+                                new_lines.append("( airconf {0} )\n".format(robot))
+                            modified = True
+                    else:
+                        if 'at {} '.format(robot) in line:
+                            new_lines.append("( at {0} {1} )\n".format(robot, robot_state[robot]["position"]))
+                            modified = True
+                        elif 'at_site {} '.format(robot) in line:
+                            new_lines.append("( at_site {0} {1} )\n".format(robot, current_site.name))
+                            modified = True
+                        elif 'conf {} '.format(robot) in line:
+                            new_lines.append("( {0} {1} )\n".format(robot_state[robot]["conf"], robot))
+                            modified = True
+                
+                if not modified:
+                    new_lines.append(line + "\n")  # If not modified, keep the original line
+            else:
+                continue
+        # Filter out POI distance definitions that don't involve the current or next site
+        elif "sp" in line or "pp" in line or "cp" in line:
+            tmpline = line.split(" ")
+            poi_in_line = [exp for exp in tmpline if "sp" in exp or "pp" in exp or "cp" in exp]
+            
+            # Check if all POIs in this line belong to either current or next site
+            if all(any(exp == poi.name for poi in current_site.poi) or any(exp == poi.name for poi in next_site.poi) for exp in poi_in_line):
+                new_lines.append(line + "\n")
+            continue  # Skip lines that reference POIs from other sites
+        
+        elif "site_size" in line:
+            if current_site.name in line or next_site.name in line:
+                new_lines.append(line + "\n")
+            continue  # Remove other site size definitions
+
+        # Modify the goal section
+        elif 'goal' in line and not goal_added:
+            new_lines.append("(:goal\n")  # Define goal block
+            new_lines.append("( and\n")            
+            if next_site.name == "base":
+                for robot in robot_state.keys():
+                    new_lines.append("( groundconf {0})\n".format(robot))
+            else:
+                for p in next_site.poi:
+                    if p.typepoi == "sample":
+                        new_lines.append("(sampled {0})\n".format(p.name))
+            new_lines.append(")\n")  # Close the `and` block
+            new_lines.append(")\n")  # Close `goal`
+            new_lines.append(")\n") # Close `define`
+            goal_added = True  # Ensure we only modify goal once
+            break
+
+        else:
+            new_lines.append(line + "\n")  # Keep all other lines
+
+    # Create the output directory if it doesn't exist
+    output_dir = "/tmp/plan_output/subproblems/"
+
+    # Define the new problem file path
+    updated_path = os.path.join(output_dir, f"subp_{current_site.name}_{next_site.name}")
+
+    # Write the updated problem file
+    with open(updated_path + ".pddl", 'w') as file:
+        file.writelines(new_lines)
+
+    return updated_path
 
 def getdataclassfrompddl(file):
     """ Create data class from PDDL problem script """
@@ -801,29 +768,33 @@ def getdataclassfrompddl(file):
                 mission = eval(contents[0].partition("= ")[2])
     return mission
 
+import json
+from pathlib import Path
+from typing import Dict
+from dataclasses import asdict
+
 def recover_mission_from_json(json_file: Path) -> Mission:
     """
-    Reads a world_info.json file and recovers the Mission data class.
+    Reads a world_info.json file and reconstructs the Mission data class.
+    
     :param json_file: Path to the JSON file containing world information.
-    :return: Mission object constructed from the JSON data.
+    :return: Mission object reconstructed from the JSON data.
     """
     # Load the JSON data
     with open(json_file, 'r') as f:
         data = json.load(f)
 
-    # Map to store POIs by their ID
+    # Create a dictionary to map POI IDs to Poi objects
     points: Dict[str, Poi] = {}
     for point in data["points"]:
-        # Infer mediums based on the type of the POI
-        mediums = []
-        if point["type"] == "transition":
-            mediums = [-1, 1]
-        elif point["type"] == "survey":
-            mediums = [1]
-        elif point["type"] == "sample":
-            mediums = [-1]
-        
-        # Create a Poi object
+        # Infer mediums based on the POI type
+        mediums = {
+            "transition": [-1, 1],
+            "survey": [1],
+            "sample": [-1]
+        }.get(point["type"], [])  # Default to empty if unknown
+
+        # Create a Poi object and store it in the map
         points[point["id"]] = Poi(
             mediums=mediums,
             name=point["id"],
@@ -834,10 +805,9 @@ def recover_mission_from_json(json_file: Path) -> Mission:
     # Parse sites and associate POIs
     sites = []
     for site in data["sites"]:
-        # Extract associated POIs for this site
         site_pois = [points[poi_id] for poi_id in site["points"]]
 
-        # Calculate the center of the site based on its POIs' coordinates
+        # Compute center coordinates
         if site_pois:
             x_center = sum(poi.loc[0] for poi in site_pois) / len(site_pois)
             y_center = sum(poi.loc[1] for poi in site_pois) / len(site_pois)
@@ -846,7 +816,6 @@ def recover_mission_from_json(json_file: Path) -> Mission:
         else:
             center = (0, 0, 0)
 
-        # Create a Site object
         sites.append(Site(
             poi=site_pois,
             name=site["id"],
@@ -854,22 +823,32 @@ def recover_mission_from_json(json_file: Path) -> Mission:
             size=site["size"]
         ))
 
-    # Hardcoded robots (as per example)
-    robots = [
-        Robot(name=f"robot{i}", loc=(410.8, 212.9, 0), medium=0, poi="cpbase", site="base", energy=10000)
-        for i in range(4)
-    ]
+    # Parse robots if they exist in the JSON file
+    robots = []
+    if "robots" in data:
+        for robot in data["robots"]:
+            robots.append(Robot(
+                name=robot["name"],
+                loc=tuple(robot["loc"]),
+                medium=robot["medium"],
+                histo=robot.get("histo", []),
+                currentpathcost=robot.get("currentpathcost", 0),
+                poi=robot["poi"],
+                site=robot["site"],
+                energy=robot["energy"]
+            ))
 
     # Construct and return the Mission object
     mission = Mission(
         sites=sites,
         robots=robots,
-        objective="assess",  # From example
-        arenasize=1000,      # From example
-        sitesize=(10, 50)    # From example
+        objective=data.get("objective", "explore"),
+        arenasize=data.get("arenasize", 1000),
+        sitesize=tuple(data.get("sitesize", [10, 50]))
     )
 
     return mission
+
 
 ##################### CORE ALGORITHM TO GET BEST ASSIGNEMENT ########################
 
@@ -1221,34 +1200,6 @@ def getbestassignfrommission(mission=Mission(sites=[], robots=[]), minnbofcluste
 
     return clusters, allocationscenario
 
-
-def Generateproblems(mission, nb_cluster, folder, clustersgiven=[], missiongiven=Mission()):
-    """ Generate all the sub-problems info for PDDL resolution """ 
-
-    # print(sys.argv)
-    # mission = missiongiven
-    # mission = getdataclassfrompddl(study="TMMS/" + sys.argv[1], batch=sys.argv[2], num=sys.argv[3])
-    print("NB SITES: ",len(mission.sites[1::]),",NB ROBOTS: ", len(mission.robots),",NB OBJECTIVES: ",sum([len(s.poi) for s in mission.sites[1::]])-len(mission.sites[1::]))
-    clusters, allocationscenario = getbestassignfrommission(mission=mission,minnbofcluster=nb_cluster)
-    
-    print("Clusters:")
-    for c in clusters:
-        print(c.name)
-        for s in c.sites:
-            generateNewMissionRobotProblems(s, folder)
-            print(s.name)
-        print("\n")
-
-    
-    totaldistancetime=[]
-    print("Robot assignement:")
-    for r in mission.robots:
-        print(r.name, "asigned to", r.histo)
-        totaldistancetime.append(gettotaldistances(r.histo, mission.sites))
-    print("\n")
-    print("total max time of path",max(totaldistancetime))
-    pass
-
 def findpoint(name="", sites=[]):
     """  """
 
@@ -1404,11 +1355,11 @@ def merge_for_single_path(plans: List[Path], output: Path, domain, problem: Path
     reader = PDDLReader()
     upf_pb = reader.parse_problem(domain, problem)
     actions: List[Tuple[Fraction, Any, Fraction]] = []
-    for plan in plans:
+    for i,plan in enumerate(plans):
         upf_plan = reader.parse_plan(upf_pb, plan)
         end_plan = max((a[0] + a[2] for a in actions), default=0)
         for a in upf_plan.timed_actions:
-            actions.append((a[0] + end_plan, a[1], a[2]))
+            actions.append((a[0] + end_plan + Fraction(i,1000), a[1], a[2]))
     new_plan = TimeTriggeredPlan(actions)
 
     writer = PDDLWriter(upf_pb)
@@ -1439,12 +1390,12 @@ def convert_toSTN(plan: Path, output: Path, domain, problem: Path):
     writer = PDDLWriter(upf_pb)
     writer.write_plan(upf_plan_stn, output)
 
-def p_plan(plan_path):
+def p_plan(plan_path,robot_state):
     """ Parses the plan to find the last position and state of each robot. """
 
     with open(plan_path, 'r') as file:
         plan = file.read()
-    robot_info = {}
+
     actions = plan.strip().split('\n')
     for action in actions:
         if action:
@@ -1455,98 +1406,23 @@ def p_plan(plan_path):
                 robot1 = params[0]
                 if "observe_2r" in action_name:
                     robot2 = params[1]
-                    robot_info[robot2] = {'position': params[-2], 'conf': "airconf"}
-                robot_info[robot1] = {'position': params[-2], 'conf': "airconf"}
+                    robot_state[robot2] = {'position': params[-2], 'conf': "airconf"}
+                robot_state[robot1] = {'position': params[-2], 'conf': "airconf"}
             elif "navigation" in action_name or "switch" in action_name:
                 robot = params[0]
-                if robot not in robot_info:
-                    robot_info[robot] = {'position': None, 'conf': None}
-                robot_info[robot]['position'] = params[-2]  # assuming last position before ']'
+                if robot not in robot_state:
+                    robot_state[robot] = {'position': None, 'conf': None}
+                robot_state[robot]['position'] = params[-2]  # assuming last position before ']'
                 if "airwater" in action_name:
-                    robot_info[robot]['conf'] = 'waterconf'
+                    robot_state[robot]['conf'] = 'waterconf'
                 elif "waterair" in action_name:
-                    robot_info[robot]['conf'] = 'airconf'
+                    robot_state[robot]['conf'] = 'airconf'
                 elif "takeoff" in action_name:
-                    robot_info[robot]['conf'] = 'airconf'
+                    robot_state[robot]['conf'] = 'airconf'
                 elif "landing" in action_name:
-                    robot_info[robot]['conf'] = 'groundconf'
+                    robot_state[robot]['conf'] = 'groundconf'
 
-    return robot_info
-
-def generateReturnProblem(original_path, updated_path, robot_info):
-    """ Reads an original PDDL problem file, updates the initial states, and writes to a new file. """
-    with open(original_path, 'r') as file:
-        lines = file.readlines()
-
-    new_lines = []
-    previous_lines = []
-    for line in lines:
-        if '(at ' in line or '(airconf ' in line:
-            previous_lines.append(line)
-            for robot, info in robot_info.items():
-                if '(at {0}'.format(robot) in line:
-                    new_lines.append(f"(at {robot} {info['position']})\n")
-                if '(airconf {0}'.format(robot) in line:
-                    new_lines.append(f"({info['conf']} {robot})\n")
-
-        elif '(:goal' in line:
-            new_lines.append(line)  # Add the initial line of the goal block
-            # Add the previous state as goal conditions
-            new_lines.extend(previous_lines)
-            new_lines.append(")\n")
-            new_lines.append(")\n")
-            new_lines.append(")")
-            break
-        
-        else:
-            new_lines.append(line)
-        
-    with open(updated_path, 'w') as file:
-        file.writelines(new_lines)
-
-def generateNavProblem(original_path, updated_path, robot_info, current_site, nextsite):
-    """ Reads an original PDDL problem file, updates the initial states, and writes to a new file. """
-    with open(original_path, 'r') as file:
-        lines = file.readlines()
-    new_lines = []
-    print(original_path, updated_path, robot_info, current_site, nextsite)
-
-    for line in lines:
-        if 'at ' in line or 'at_site ' in line or 'conf' in line:
-            for robot in robot_info:
-                if 'at {0}'.format(robot) in line:
-                    new_lines.append("        ( at {0} cp{1})\n".format(robot, current_site))
-
-                if 'at_site {0}'.format(robot) in line:
-                    new_lines.append("        ( at_site {0} {1})\n".format(robot, current_site))
-
-                if 'conf {0}'.format(robot) in line:
-                    if current_site == "base":
-                        new_lines.append("        ( groundconf {0})\n".format(robot))
-                    else:
-                        new_lines.append("        ( airconf {0})\n".format(robot))
-
-        elif 'goal' in line:
-            new_lines.append(line)  # Add the initial line of the goal block
-            new_lines.append("    ( and\n")
-            # Add the previous state as goal conditions
-            for robot in robot_info:
-                if nextsite == "base":
-                    new_lines.append("        ( at {0} cp{1})\n".format(robot, nextsite))
-                    new_lines.append("        ( groundconf {0})\n".format(robot))
-                else:
-                    new_lines.append("        ( at {0} cp{1})\n".format(robot, nextsite))
-                    new_lines.append("        ( at_site {0} {1})\n".format(robot, nextsite))
-            new_lines.append("    )\n")
-            new_lines.append(")\n")
-            new_lines.append(")")
-            break
-        
-        else:
-            new_lines.append(line)
-        
-    with open(updated_path, 'w') as file:
-        file.writelines(new_lines)
+    return robot_state
 
 def trim_plan_file(file_path):
     # Flag to start recording lines
@@ -1583,29 +1459,6 @@ def filter_robots_in_file(input_filepath, output_filepath, allowed_robots):
     with open(output_filepath, 'w') as file:
         file.writelines(filtered_lines)
 
-
-# # Example usage:
-# plan_contents = """
-# 0.000: (navigation_air_multirotor robot0 cpsite4 sp16 site4) [12.206]
-# 0.000: (survey_site robot1 cpsite4 site4) [26.666]
-# 26.666: (switch_airwater robot0 sp16 site4) [5.000]
-# 26.667: (navigation_air_multirotor robot1 cpsite4 sp13 site4) [14.753]
-# 31.667: (translate_data robot0 sp16 site4) [45.000]
-# 41.421: (navigation_air_multirotor robot1 sp13 sp14 site4) [9.606]
-# 51.028: (switch_airwater robot1 sp14 site4) [5.000]
-# 56.029: (navigation_water_multirotor robot1 sp14 pp13 site4) [11.360]
-# 67.390: (assess robot1 pp13 site4) [30.000]
-# 76.668: (navigation_water_multirotor robot0 sp16 sp13 site4) [79.940]
-# 97.391: (navigation_water_multirotor robot1 pp13 pp10 site4) [48.480]
-# 156.609: (translate_data robot0 sp13 site4) [45.000]
-# 156.610: (assess robot1 pp10 site4) [30.000]
-# 186.611: (navigation_water_multirotor robot1 pp10 pp11 site4) [28.740]
-# 201.610: (translate_data robot0 sp13 site4) [45.000]
-# 215.352: (assess robot1 pp11 site4) [30.000]
-# 245.353: (navigation_water_multirotor robot1 pp11 pp12 site4) [28.040]
-# 246.611: (translate_data robot0 sp13 site4) [45.000]
-# 273.394: (assess robot1 pp12 site4) [30.000]
-# """
 from typing import (
     Any,
     Dict,
@@ -1731,22 +1584,22 @@ def plot_stn_plan_robotdepend(
 
 
 
-domain = Path("/home/virgile/PHD/test_ws/MMdomainextended.pddl")
-problem = Path("/home/virgile/PHD/test_ws/site4.pddl")
-output = Path("/home/virgile/PHD/test_ws/STNoutput.txt")
-plan = Path("/home/virgile/PHD/test_ws/site4PDDLSOLVE.txt")
+# domain = Path("/home/virgile/PHD/test_ws/MMdomainextended.pddl")
+# problem = Path("/home/virgile/PHD/test_ws/site4.pddl")
+# output = Path("/home/virgile/PHD/test_ws/STNoutput.txt")
+# plan = Path("/home/virgile/PHD/test_ws/site4PDDLSOLVE.txt")
 
-reader = PDDLReader()
-upf_pb = reader.parse_problem(domain, problem)
-if upf_pb.epsilon is None:
-    upf_pb.epsilon = Fraction(1,1000)
-# actions: List[Tuple[Fraction, Any, Fraction]] = []
+# reader = PDDLReader()
+# upf_pb = reader.parse_problem(domain, problem)
+# if upf_pb.epsilon is None:
+#     upf_pb.epsilon = Fraction(1,1000)
+# # actions: List[Tuple[Fraction, Any, Fraction]] = []
 
-upf_plan = reader.parse_plan(upf_pb, plan)
-# plot_causal_graph(upf_pb)
-# plot_time_triggered_plan(upf_plan)
+# upf_plan = reader.parse_plan(upf_pb, plan)
+# # plot_causal_graph(upf_pb)
+# # plot_time_triggered_plan(upf_plan)
 
-upf_plan_stn = upf_plan.convert_to(PlanKind.STN_PLAN, upf_pb)
+# upf_plan_stn = upf_plan.convert_to(PlanKind.STN_PLAN, upf_pb)
 
 def node_to_string(node):
     return str(node.action_instance) #.split('(')[0]
@@ -1798,3 +1651,9 @@ def filtrate_plan(plan):
 # problems = [problem1,problem2]
 # output= Path("/home/virgile/PHD/test_ws/output.txt")
 # merge_for_single_path(plans=[plan1,plan2], output=output, domain=domain, problems=problems)
+
+
+
+# mission = Mission(sites=[Site(poi=[Poi(mediums=[0, 1], name='cpbase', loc=(-469.2, -197.9, 0), typepoi='transition')], robots=[], name='base', center=(-469.2, -197.9, 0), size=10), Site(poi=[Poi(mediums=[1], name='cpsite1', loc=(-398.3, -73.0, 1), typepoi='survey'), Poi(mediums=[-1], name='pp1', loc=(-415.3, -58.1, -4), typepoi='sample'), Poi(mediums=[-1], name='pp2', loc=(-406.8, -77.4, -4), typepoi='sample'), Poi(mediums=[-1], name='pp3', loc=(-401.4, -60.4, -4), typepoi='sample'), Poi(mediums=[-1], name='pp4', loc=(-415.6, -62.2, -4), typepoi='sample'), Poi(mediums=[-1, 1], name='sp1', loc=(-416.2, -90.3, 0), typepoi='transition'), Poi(mediums=[-1, 1], name='sp2', loc=(-413.2, -87.0, 0), typepoi='transition'), Poi(mediums=[-1, 1], name='sp3', loc=(-381.0, -71.6, 0), typepoi='transition'), Poi(mediums=[-1, 1], name='sp4', loc=(-415.6, -83.8, 0), typepoi='transition'), Poi(mediums=[-1, 1], name='sp5', loc=(-383.7, -84.8, 0), typepoi='transition')], robots=[], name='site1', center=(-398.3, -73.0, 0), size=40), Site(poi=[Poi(mediums=[1], name='cpsite2', loc=(-225.7, 450.5, 1), typepoi='survey'), Poi(mediums=[-1], name='pp5', loc=(-220.8, 464.5, -3), typepoi='sample'), Poi(mediums=[-1], name='pp6', loc=(-213.7, 463.9, -3), typepoi='sample'), Poi(mediums=[-1], name='pp7', loc=(-228.0, 442.0, -3), typepoi='sample'), Poi(mediums=[-1, 1], name='sp6', loc=(-231.1, 443.0, 0), typepoi='transition'), Poi(mediums=[-1, 1], name='sp7', loc=(-236.0, 440.5, 0), typepoi='transition'), Poi(mediums=[-1, 1], name='sp8', loc=(-229.0, 436.5, 0), typepoi='transition'), Poi(mediums=[-1, 1], name='sp9', loc=(-215.4, 442.9, 0), typepoi='transition')], robots=[], name='site2', center=(-225.7, 450.5, 0), size=30), Site(poi=[Poi(mediums=[1], name='cpsite3', loc=(-78.4, 412.1, 1), typepoi='survey'), Poi(mediums=[-1], name='pp8', loc=(-61.9, 403.5, -4), typepoi='sample'), Poi(mediums=[-1], name='pp9', loc=(-84.1, 413.1, -4), typepoi='sample'), Poi(mediums=[-1], name='pp10', loc=(-72.7, 422.5, -4), typepoi='sample'), Poi(mediums=[-1], name='pp11', loc=(-83.6, 395.0, -4), typepoi='sample'), Poi(mediums=[-1, 1], name='sp10', loc=(-66.9, 420.4, 0), typepoi='transition'), Poi(mediums=[-1, 1], name='sp11', loc=(-81.6, 420.2, 0), typepoi='transition'), Poi(mediums=[-1, 1], name='sp12', loc=(-62.5, 413.9, 0), typepoi='transition'), Poi(mediums=[-1, 1], name='sp13', loc=(-94.2, 395.2, 0), typepoi='transition'), Poi(mediums=[-1, 1], name='sp14', loc=(-73.4, 402.1, 0), typepoi='transition')], robots=[], name='site3', center=(-78.4, 412.1, 0), size=40), Site(poi=[Poi(mediums=[1], name='cpsite4', loc=(-311.5, 277.3, 1), typepoi='survey'), Poi(mediums=[-1], name='pp12', loc=(-317.3, 283.7, -3), typepoi='sample'), Poi(mediums=[-1], name='pp13', loc=(-314.6, 292.0, -3), typepoi='sample'), Poi(mediums=[-1], name='pp14', loc=(-315.6, 289.3, -3), typepoi='sample'), Poi(mediums=[-1, 1], name='sp15', loc=(-319.5, 285.5, 0), typepoi='transition'), Poi(mediums=[-1, 1], name='sp16', loc=(-314.2, 266.4, 0), typepoi='transition'), Poi(mediums=[-1, 1], name='sp17', loc=(-318.4, 281.1, 0), typepoi='transition'), Poi(mediums=[-1, 1], name='sp18', loc=(-320.0, 266.3, 0), typepoi='transition')], robots=[], name='site4', center=(-311.5, 277.3, 0), size=30), Site(poi=[Poi(mediums=[1], name='cpsite5', loc=(-310.5, -120.8, 1), typepoi='survey'), Poi(mediums=[-1], name='pp15', loc=(-318.0, -127.4, -2), typepoi='sample'), Poi(mediums=[-1], name='pp16', loc=(-305.4, -128.9, -2), typepoi='sample'), Poi(mediums=[-1, 1], name='sp19', loc=(-316.6, -121.5, 0), typepoi='transition'), Poi(mediums=[-1, 1], name='sp20', loc=(-308.8, -127.6, 0), typepoi='transition')], robots=[], name='site5', center=(-310.5, -120.8, 0), size=20), Site(poi=[Poi(mediums=[1], name='cpsite6', loc=(30.8, 138.1, 1), typepoi='survey'), Poi(mediums=[-1], name='pp17', loc=(32.1, 143.2, -2), typepoi='sample'), Poi(mediums=[-1], name='pp18', loc=(28.8, 133.9, -2), typepoi='sample'), Poi(mediums=[-1, 1], name='sp21', loc=(26.5, 130.0, 0), typepoi='transition'), Poi(mediums=[-1, 1], name='sp22', loc=(37.1, 137.5, 0), typepoi='transition')], robots=[], name='site6', center=(30.8, 138.1, 0), size=20), Site(poi=[Poi(mediums=[1], name='cpsite7', loc=(-275.3, -211.1, 1), typepoi='survey'), Poi(mediums=[-1], name='pp19', loc=(-275.7, -220.4, -2), typepoi='sample'), Poi(mediums=[-1], name='pp20', loc=(-267.1, -217.8, -2), typepoi='sample'), Poi(mediums=[-1, 1], name='sp23', loc=(-279.3, -214.0, 0), typepoi='transition'), Poi(mediums=[-1, 1], name='sp24', loc=(-282.6, -208.3, 0), typepoi='transition')], robots=[], name='site7', center=(-275.3, -211.1, 0), size=20), Site(poi=[Poi(mediums=[1], name='cpsite8', loc=(-210.3, -244.5, 1), typepoi='survey'), Poi(mediums=[-1], name='pp21', loc=(-208.9, -245.1, -2), typepoi='sample'), Poi(mediums=[-1], name='pp22', loc=(-208.8, -246.6, -2), typepoi='sample'), Poi(mediums=[-1, 1], name='sp25', loc=(-220.1, -250.0, 0), typepoi='transition'), Poi(mediums=[-1, 1], name='sp26', loc=(-218.8, -251.4, 0), typepoi='transition')], robots=[], name='site8', center=(-210.3, -244.5, 0), size=20), Site(poi=[Poi(mediums=[1], name='cpsite9', loc=(189.3, 407.6, 1), typepoi='survey'), Poi(mediums=[-1], name='pp23', loc=(189.2, 402.8, -1), typepoi='sample'), Poi(mediums=[-1, 1], name='sp27', loc=(193.1, 408.7, 0), typepoi='transition')], robots=[], name='site9', center=(189.3, 407.6, 0), size=10)], robots=[Robot(name='robot0', loc=(-469.2, -197.9, 0), medium=0, histo=[], currentpathcost=0, poi='cpbase', site='base', energy=10000), Robot(name='robot1', loc=(-469.2, -197.9, 0), medium=0, histo=[], currentpathcost=0, poi='cpbase', site='base', energy=10000), Robot(name='robot2', loc=(-469.2, -197.9, 0), medium=0, histo=[], currentpathcost=0, poi='cpbase', site='base', energy=10000), Robot(name='robot3', loc=(-469.2, -197.9, 0), medium=0, histo=[], currentpathcost=0, poi='cpbase', site='base', energy=10000), Robot(name='robot4', loc=(-469.2, -197.9, 0), medium=0, histo=[], currentpathcost=0, poi='cpbase', site='base', energy=10000), Robot(name='robot5', loc=(-469.2, -197.9, 0), medium=0, histo=[], currentpathcost=0, poi='cpbase', site='base', energy=10000), Robot(name='robot6', loc=(-469.2, -197.9, 0), medium=0, histo=[], currentpathcost=0, poi='cpbase', site='base', energy=10000), Robot(name='robot7', loc=(-469.2, -197.9, 0), medium=0, histo=[], currentpathcost=0, poi='cpbase', site='base', energy=10000), Robot(name='robot8', loc=(-469.2, -197.9, 0), medium=0, histo=[], currentpathcost=0, poi='cpbase', site='base', energy=10000), Robot(name='robot9', loc=(-469.2, -197.9, 0), medium=0, histo=[], currentpathcost=0, poi='cpbase', site='base', energy=10000)], objective='assess', arenasize=1000, sitesize=(10, 50))
+
+# print(getbestassignfrommission(mission=mission,minnbofcluster=2))
