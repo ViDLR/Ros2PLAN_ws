@@ -1,18 +1,18 @@
-
+import itertools
 import os
 import time
 from dataclasses import dataclass, field
 from math import sqrt
 from random import randint, randrange, uniform
-
-
+import scipy.stats as scistat
+import subprocess
 import json
-from scipy.spatial.distance import cdist
-from itertools import combinations_with_replacement, product
-from collections import defaultdict
+from scipy.optimize import linprog
+import heapq
 
 import matplotlib.pyplot as plt
-import graphviz
+import matplotlib.colors as mcolors
+import matplotlib.patches as mpatches
 import pandas as pd
 import networkx as nx
 import numpy as np
@@ -72,8 +72,6 @@ class Site():
     """ Coordinates of the center of the site """
     size:float = 50
     """ Size of side of the square site """
-    total_completion_time:float = 0.0
-    """ time to complete the site in assignement """
 
 @dataclass 
 class Cluster_class():
@@ -90,8 +88,6 @@ class Cluster_class():
     """ Dictionary mapping number of robots to cost """
     bestscenario:dict[int, tuple] = field(default_factory=dict)
     """ The dict of robot attribution in best case for this cluster depending on number of robots"""
-    total_completion_time:float = 0.0
-    """ time to complete the cluster in assignement """
 
     @property
     def centroid_of_sites_2d(self):
@@ -290,7 +286,7 @@ def showclusters(mission, clusterslist, base=Site(poi=[], robots=[])):
         
         # Xr = np.append(Xr, base.poi[0].loc[0])
         # Yr = np.append(Yr, base.poi[0].loc[1])
-        # plt.plot(Xr,Yr,marker = '.', color=c, label='cluster {0} order'.format(idx))
+        plt.plot(Xr,Yr,marker = '.', color=c, label='cluster {0} order'.format(idx))
         idx+=1
     
     plt.scatter(base.poi[0].loc[0], base.poi[0].loc[1],marker = "o", color="k", label="base")
@@ -375,12 +371,46 @@ def Random_Robots(mission=Mission(sites=[],robots=[]),nbr = int()):
 
 ##################### FUNCTIONS FOR ESTIMATION OF SITES COST ########################
 
+def get_weights_of_sites(sites=[],robots=[],listrused=[]):
+    """ Use sites and possible teams as input and send back the associated weights and cost estimation based on local clustering of objectives and TSP solving"""
+    
+    if listrused == []:
+        listrused = getlistusedRgroups(robots)
+
+    # print(listrused, [s.name for s in sites])
+    weights_sites_list=[]
+    costs_of_all_sites=[]
+    for s in sites:
+        cost_of_site = []
+        maxclust= min(len(robots)+1,len(s.poi))
+        
+        for r in listrused:
+            costtours=[]
+            clusters = Clustersite(poi=s.poi, nb_cluster=maxclust, weightslist=None)
+            for cluster in clusters:
+                costtours.append(CostEstimOftour(cluster)[1])
+                
+            cost_of_site.append(max(costtours))
+
+        # If the sites doesnt contain more that 2 objectives, we put a very small cost on it 
+        if maxclust <2:
+            weights_sites_list.append(1.0)
+            continue
+
+        costs_of_all_sites.append(cost_of_site)
+        weights_sites_list.append(sum(cost_of_site))
+
+    return weights_sites_list, costs_of_all_sites
+
 def CostEstimOftour(poi=[], waterspeed=0.5, airspeed=1.5, assesscost=30, explorecost=15, switchcost=10):
     """ 
     Comprehensive cost estimation function for clustering (Step 1) 
     - Includes all execution costs for site processing 
     - Penalizes transitions between different mediums
     """
+
+    if len(poi) < 2:
+        return 0, 0  # No travel needed
 
     num_poi = len(poi)
     distance_matrix = np.zeros((num_poi, num_poi))
@@ -407,6 +437,16 @@ def CostEstimOftour(poi=[], waterspeed=0.5, airspeed=1.5, assesscost=30, explore
 def Clustersite(poi=[], nb_cluster=int, weightslist=None):
     """ Cluster the POI into 'nb_cluster' number of clusters"""
 
+    # '''
+    # Clusters poi into X (number of clusters) clusters.
+
+    # Parameters:
+    #     Site: (list of poi)
+
+    # Returns:
+    #     clusters (X list): clusters of points indexed for each robot:
+    # '''
+
     positions = np.array([vp.loc for vp in poi])
     # Implementing Kmeans method 
     kmeans = KMeans(n_clusters=nb_cluster, random_state=0, n_init=10).fit(X=positions,sample_weight=weightslist)
@@ -423,79 +463,6 @@ def Clustersite(poi=[], nb_cluster=int, weightslist=None):
 
     return clusters
 
-def get_weights_of_sites(sites=[], robots=[], listrused=[]):
-    """ 
-    Finalized heuristic for estimating site resolution cost:
-    - Better captures **real-world execution behavior**.
-    - Ensures **parallel execution is correctly modeled**.
-    - Adjusts for **diminishing returns** in a **balanced way**.
-    """
-    
-    if not listrused:
-        listrused = getlistusedRgroups(robots)
-    
-    weights_sites_list = []
-    costs_of_all_sites = []
-
-    for s in sites:
-        cost_of_site = []
-        num_samples = sum(1 for p in s.poi if p.typepoi == "sample")  # Number of sampling points
-        num_transitions = sum(1 for p in s.poi if p.typepoi == "transition")  # Number of transition points
-        site_factor = 1 + (num_samples / (num_samples + num_transitions + 2))  # 🔥 Balanced site impact
-
-        for r in listrused:  # ✅ At least 2 robots required
-            maxclust = min(r, len(s.poi) - 1)
-            sample_clusters = []
-            relay_clusters = []
-            transition_clusters = []
-            
-            clusters = Clustersite(poi=s.poi[1:], nb_cluster=maxclust)
-            for cluster in clusters:
-                cluster.insert(0, s.poi[0])
-
-                if cluster[-1].typepoi == "sample":
-                    last_sample_poi = cluster[-1]
-                    
-                    # Find the closest transition POI
-                    transition_pois = [p for p in s.poi if p.typepoi == "transition"]
-                    if transition_pois:
-                        closest_transition_poi = min(transition_pois, key=lambda p: distance(last_sample_poi.loc, p.loc))
-                        cluster.insert(1, closest_transition_poi)
-
-                # **Separate Sample, Relay, and Transition Clusters**
-                if any(p.typepoi == "sample" for p in cluster):
-                    sample_clusters.append(cluster)
-                elif any(p.typepoi == "transition" for p in cluster):
-                    relay_clusters.append(cluster)
-                else:
-                    transition_clusters.append(cluster)
-
-            # **Estimate Cost for Sampling, Relay, and Transition Separately**
-            sample_costs = [CostEstimOftour(cluster)[1] for cluster in sample_clusters]
-            relay_costs = [CostEstimOftour(cluster)[1] for cluster in relay_clusters]
-            transition_costs = [CostEstimOftour(cluster)[1] for cluster in transition_clusters]
-
-            # ✅ **Parallel Execution Simulation**
-            num_sample_robots = max(1, r - 1)  # At least one sampling robot
-            relay_cost = sum(relay_costs) * 0.9  # 🔥 Relay efficiency factor
-            sample_cost = (sum(sample_costs) / num_sample_robots) * 0.95  # 🔥 Adjusted parallel workload
-
-            estimated_cost = max(relay_cost, sample_cost) + sum(transition_costs)  # 🔥 Ensuring correct execution behavior
-
-            # ✅ **Diminishing Returns with Site Scaling**
-            diminishing_factor = 1 + (0.6 / (r ** 0.95)) * site_factor  # 🔥 Faster convergence for large sites
-            adjusted_cost = estimated_cost / diminishing_factor  
-
-            # ✅ **Ensure Cost Never Increases with More Robots**
-            if len(cost_of_site) > 0 and adjusted_cost > cost_of_site[-1]:
-                adjusted_cost = cost_of_site[-1]  # Force non-increasing cost behavior
-
-            cost_of_site.append(round(adjusted_cost, 2))
-
-        costs_of_all_sites.append(cost_of_site)
-        weights_sites_list.append(sum(cost_of_site))
-
-    return weights_sites_list, costs_of_all_sites
 
 
 ######################### GENERATING PDDL SCRIPTS ########################
@@ -667,8 +634,9 @@ def generateTMProblemPDDL(mission=Mission(sites=[],robots=[]), num=str()):
             f.write(line)
             f.write('\n')
 
+import os
 
-def GenerateAdaptedProblem(mission, previous_problem, robot_state, next_site, goaltype):
+def GenerateAdaptedProblem(previous_problem, robot_state, current_site, next_site):
     """ 
     Generate a sub-problem PDDL file for each robot following the mission scenario.
     
@@ -678,18 +646,6 @@ def GenerateAdaptedProblem(mission, previous_problem, robot_state, next_site, go
     - Modifying the `goal` to ensure the robots sample `next_site`
     - Writing the new problem to `/tmp/subproblems/`
     """
-    
-    # Get unique **starting sites** for all robots
-    current_sites = {robot_state[r]["site"] for r in robot_state}
-    
-
-    # Retrieve site objects from mission based on names
-    current_site_objs = [site for site in mission.sites if site.name in current_sites]
-    next_site_obj = [site for site in mission.sites if site.name == next_site]
-    next_site = next_site_obj[0]
-
-    print("generate adapted problem",current_sites, "future name : ",f"subp_{'_'.join(sorted(current_sites))}_to_{next_site.name}_{goaltype}")
-
     if "pddl" not in previous_problem:
         previous_problem += ".pddl"
 
@@ -704,24 +660,20 @@ def GenerateAdaptedProblem(mission, previous_problem, robot_state, next_site, go
 
         # Modify the problem definition line (Ensure domain remains intact)
         if "define" in line:
-            problem_name = f"subp_{'_'.join(sorted(current_sites))}_to_{next_site.name}"
-            new_lines.append(f"(define (problem {problem_name})\n")
+            new_lines.append("(define (problem subp_{})\n".format(current_site.name + next_site.name))
             continue 
 
-        # Handle point of interest definition (include POIs from both current & next sites)
+         # Handle point of interest definition
         elif "- pointofinterest" in line:
             tmpline = line.split(" ")
-            filtered_pois = [
-                exp for exp in tmpline
-                if any(exp == poi.name for site in current_site_objs + [next_site] for poi in site.poi)
-            ]
+            filtered_pois = [exp for exp in tmpline if any(exp == poi.name for poi in current_site.poi) or any(exp == poi.name for poi in next_site.poi)]
             new_lines.append(" ".join(filtered_pois) + " - pointofinterest\n")
             continue
         
         # Handle site definition
         elif "- site" in line:
             tmpline = line.split(" ")
-            filtered_sites = [exp for exp in tmpline if exp in current_sites or exp == next_site.name]
+            filtered_sites = [exp for exp in tmpline if exp == current_site.name or exp == next_site.name]
             new_lines.append(" ".join(filtered_sites) + " - site\n")
             continue
 
@@ -738,52 +690,57 @@ def GenerateAdaptedProblem(mission, previous_problem, robot_state, next_site, go
                 modified = False  # Flag to track if we modified the line
                 
                 for robot in robot_state.keys():
-                    if 'at {} '.format(robot) in line:
-                        new_lines.append(f"( at {robot} {robot_state[robot]['position']} )\n")
-                        modified = True
-                    elif 'at_site {} '.format(robot) in line:
-                        new_lines.append(f"( at_site {robot} {robot_state[robot]['site']} )\n")
-                        modified = True
-                    elif 'conf {} '.format(robot) in line:
-                        new_lines.append(f"( {robot_state[robot]['conf']} {robot} )\n")
-                        modified = True
+                    if all(not v for v in robot_state.values()):
+                        if 'at {} '.format(robot) in line:
+                            new_lines.append("( at {0} cp{1} )\n".format(robot, current_site.name))
+                            modified = True
+                        elif 'at_site {} '.format(robot) in line:
+                            new_lines.append("( at_site {0} {1} )\n".format(robot, current_site.name))
+                            modified = True
+                        elif 'conf {} '.format(robot) in line:
+                            if current_site.name == "base":
+                                new_lines.append("( groundconf {0} )\n".format(robot))
+                            else:
+                                new_lines.append("( airconf {0} )\n".format(robot))
+                            modified = True
+                    else:
+                        if 'at {} '.format(robot) in line:
+                            new_lines.append("( at {0} {1} )\n".format(robot, robot_state[robot]["position"]))
+                            modified = True
+                        elif 'at_site {} '.format(robot) in line:
+                            new_lines.append("( at_site {0} {1} )\n".format(robot, current_site.name))
+                            modified = True
+                        elif 'conf {} '.format(robot) in line:
+                            new_lines.append("( {0} {1} )\n".format(robot_state[robot]["conf"], robot))
+                            modified = True
                 
                 if not modified:
                     new_lines.append(line + "\n")  # If not modified, keep the original line
             else:
                 continue
-            
         # Filter out POI distance definitions that don't involve the current or next site
         elif "sp" in line or "pp" in line or "cp" in line:
             tmpline = line.split(" ")
             poi_in_line = [exp for exp in tmpline if "sp" in exp or "pp" in exp or "cp" in exp]
             
-            # Keep only lines related to the current or next site
-            if all(
-                    any(exp == poi.name for poi in next_site.poi)  # At least one POI belongs to next_site
-                    or any(exp == poi.name for site in current_site_objs for poi in site.poi)  # OR at least one belongs to a current site
-                    for exp in poi_in_line
-                ):
-                new_lines.append(line + "\n")   
+            # Check if all POIs in this line belong to either current or next site
+            if all(any(exp == poi.name for poi in current_site.poi) or any(exp == poi.name for poi in next_site.poi) for exp in poi_in_line):
+                new_lines.append(line + "\n")
             continue  # Skip lines that reference POIs from other sites
         
         elif "site_size" in line:
-            if any(site in line for site in current_sites) or next_site.name in line:
+            if current_site.name in line or next_site.name in line:
                 new_lines.append(line + "\n")
             continue  # Remove other site size definitions
 
         # Modify the goal section
         elif 'goal' in line and not goal_added:
             new_lines.append("(:goal\n")  # Define goal block
-            new_lines.append("( and\n")
-            if goaltype == "goto":      
-                if next_site.name == "base":
-                    for robot in robot_state.keys():
-                        new_lines.append("( groundconf {0})\n".format(robot))
-                else:
-                    for robot in robot_state.keys():
-                        new_lines.append(f"( at_site {robot} {next_site.name} )\n")
-            elif goaltype == "solving":
+            new_lines.append("( and\n")            
+            if next_site.name == "base":
+                for robot in robot_state.keys():
+                    new_lines.append("( groundconf {0})\n".format(robot))
+            else:
                 for p in next_site.poi:
                     if p.typepoi == "sample":
                         new_lines.append("(sampled {0})\n".format(p.name))
@@ -800,10 +757,10 @@ def GenerateAdaptedProblem(mission, previous_problem, robot_state, next_site, go
     output_dir = "/tmp/plan_output/subproblems/"
 
     # Define the new problem file path
-    updated_path = os.path.join(output_dir, f"subp_{'_'.join(sorted(current_sites))}_to_{next_site.name}_{goaltype}")
-    print("generate adapted problem" "updated path : ",updated_path)
+    updated_path = os.path.join(output_dir, f"subp_{current_site.name}_{next_site.name}")
+
     # Write the updated problem file
-    with open(updated_path +".pddl", 'w') as file:
+    with open(updated_path + ".pddl", 'w') as file:
         file.writelines(new_lines)
 
     return updated_path
@@ -900,43 +857,10 @@ def recover_mission_from_json(json_file: Path) -> Mission:
 
 
 ##################### CORE ALGORITHM TO GET BEST ASSIGNEMENT ########################
-def alternate_from_both_sides(optimal_order):
-    """
-    Reorders sites in a zigzag pattern:
-    - First site from the start
-    - Then from the end
-    - Alternates between start and end
-
-    Example:
-    Input:  ['site1', 'site2', 'site4', 'site6', 'site7']
-    Output: ['site1', 'site4', 'site6', 'site7', 'site2']
-    """
-    left = 0
-    right = len(optimal_order) - 1
-    zigzag_order = []
-
-    while left <= right:
-        if left == right:
-            zigzag_order.append(optimal_order[left])
-        else:
-            zigzag_order.append(optimal_order[left])
-            zigzag_order.append(optimal_order[right])
-
-        left += 1
-        right -= 1
-
-    return zigzag_order
-
-from scipy.spatial.distance import cdist
-import numpy as np
-from sklearn.cluster import KMeans
 
 def Weightned_Cluster(mission, numb_clt=2):
-    """ Improved clustering with both site location and estimated processing cost.
-    Now ensures the sites in each cluster follow an optimal order based on TSP
-    and are then allocated from both sides alternately.
-    """
-
+    """ Improved clustering with both site location and estimated processing cost """
+    
     # Extract site centers and weights
     list_of_sites_center = np.array([s.poi[0].loc for s in mission.sites[1:] if s.poi])
     weights_sites_list, _ = get_weights_of_sites(sites=mission.sites[1:], robots=mission.robots)
@@ -954,363 +878,273 @@ def Weightned_Cluster(mission, numb_clt=2):
     clusters_list = [Cluster_class(name=f"cluster{cl}") for cl in range(numb_clt)]
     for idx, label in enumerate(kmeans.labels_):
         clusters_list[label].sites.append(mission.sites[idx+1])
-
-    # ✅ **Rearrange sites within each cluster based on the optimal path**
-    base_site = mission.sites[0]  # The base site
-
+    
+    # Compute cluster costs
+    cltweights, cltcosts = [], []
     for cluster in clusters_list:
-        if len(cluster.sites) > 1:
-            # Compute the optimal order of sites in the cluster
-            optimal_order_names = find_optimal_path(cluster.sites, base_site)
+        weights_of_sites, _ = get_weights_of_sites(sites=cluster.sites, robots=mission.robots)
+        cluster_cost = CostEstimOftour(poi=[s.poi[0] for s in cluster.sites if s.poi])[1] + sum(weights_of_sites)
+        cltweights.append(cluster_cost)
+        cltcosts.append(weights_of_sites)
 
-            # ✅ **Reorder sites alternately from both sides**
-            zigzag_order_names = alternate_from_both_sides(optimal_order_names)
-
-            # Reorder the cluster sites to follow this allocation-friendly path
-            cluster.sites.sort(key=lambda site: zigzag_order_names.index(site.name))
-
-    return clusters_list
-
+    # showclusters(mission, clusters_list, base=mission.sites[0])  
+    return clusters_list, cltweights, cltcosts
+    
 
 def calculate_path_cost_estim(
-    scenario: ScenarioAttribution, 
-    Robots: list, 
-    TaskList: list,  
-    listusedRgroups: list, 
-    base: Site, 
-    level: str = "site"
+    sce: ScenarioAttribution,
+    Robots: List[Robot],
+    Clusters: List[Cluster_class] = [],
+    Sites: List[Site] = [],
+    listusedRgroups=[],
+    base: Site = Site(poi=[], robots=[]),
+    level="site",
 ):
-    """
-    **Fixed Scenario Cost Estimation**
-    - Ensures no robots are left idle if they can contribute.
-    - Assigns robots based on proximity to minimize movement cost.
-    - Synchronization adjusted to prioritize execution over waiting.
-    """
+    """ Calculate cost estimation dynamically for site or cluster level. """
+    
+    is_cluster_level = level == "cluster"
+    allocation_targets = Clusters if is_cluster_level else Sites
 
     idx = 0
-    available_robots = Robots[:]  # Copy list of robots
+    for assignment, target in zip(sce.scenario, allocation_targets):
+        cost_action = sce.costmatrix[idx][listusedRgroups.index(assignment)]
+        available_robots = Robots[:]
 
-    for assignment, task in zip(scenario.scenario, TaskList):
-        available_robots = Robots[:]  # Reset available robots per site
-        # if level =="cluster":
-        #     target_location = min(task.sites, key=lambda s: distance(base.center, s.center)).center
-        # else:
-        #     target_location = task.center
-        target_location = task.center
-        costaction = scenario.costmatrix[idx][listusedRgroups.index(assignment)]
-
-        while len(task.robots) < assignment:        
-            assigncost = []
+        while len(target.robots) < assignment:
+            assign_costs = []
             for r in available_robots:
-                
-                # ✅ **Assign robots based on travel distance to the site**
-                travel_time = round(distance(r.loc, target_location) / 1.5, 2)
-                accumulated_cost = costaction + r.currentpathcost + travel_time
-                assigncost.append(accumulated_cost)
+                assign_costs.append(cost_action + r.currentpathcost + distance(r.loc, target.center) / 1.5)
 
-            # ✅ **Choose the best robot (min cost robot)**
-            best_robot_idx = assigncost.index(min(assigncost))
-            best_robot = available_robots[best_robot_idx]
-
-            # ✅ Assign robot and track its arrival time
-            task.robots.append(best_robot)
-            best_robot.currentpathcost += assigncost[best_robot_idx]
-            best_robot.loc = target_location
-            best_robot.histo.append(task.name)
-
+            best_robot_idx = assign_costs.index(min(assign_costs))
+            target.robots.append(available_robots[best_robot_idx])
+            available_robots[best_robot_idx].currentpathcost += min(assign_costs)
+            available_robots[best_robot_idx].loc = target.center
             available_robots.remove(available_robots[best_robot_idx])
-            # # Sync only those robots whose arrival times are far off
-            # site_sync_time = max(avg_site_cost, max_site_cost * 0.8)
 
-            for r in task.robots:
-                r.currentpathcost = max([r.currentpathcost for r in task.robots])
+        idx += 1
 
-        idx += 1  
+    # Find max mission completion time
+    max_time = max(r.currentpathcost for r in Robots)
 
-    for r in Robots:
-        r.currentpathcost += round(distance(r.loc, base.center), 2) 
-    # ✅ **Final mission cost based on the highest accumulated robot path**
-    scenario.totalcost = max([r.currentpathcost for r in Robots])
-    # ✅ **Reset robot states after simulation**
+    # Reset robots and sites/clusters after estimation
     for r in Robots:
         r.currentpathcost = 0
         r.histo = []
         r.loc = base.center
+    for c in Clusters:
+        c.robots = []
+    for s in Sites:
+        s.robots = []
 
-    for t in TaskList:
-        t.robots = []
-        t.total_completion_time = 0
-        if level == "cluster":
-            for s in t.sites:
-                s.robots = []
-                s.total_completion_time = 0
+    sce.totalcost = max_time
+    return sce
+
+
+
+# def getbestassignforclusterandR(num_robots, costsites, listusedRgroups, cluster, base, clst=False,Robots=[]):
+#     """ Optimized robot allocation using Hungarian Algorithm with structured output """
+
+#     num_sites = len(costsites)
+#     cost_matrix = np.array(costsites)
+    
+#     # Generate all possible assignments
+#     possible_assignments = list(itertools.product(listusedRgroups, repeat=num_sites))
+    
+#     best_scenario, best_cost = None, float('inf')
+    
+#     for assignment in possible_assignments:
+#         row_ind, col_ind = hungarian(cost_matrix)
+#         total_cost = cost_matrix[row_ind, col_ind].sum()
+        
+#         if total_cost < best_cost:
+#             best_cost = total_cost
+#             best_scenario = assignment
+
+#     # Return a structured ScenarioAttribution object
+#     return ScenarioAttribution(clusterinscenario=cluster, scenario=best_scenario, numrobots=num_robots, totalcost=best_cost, costmatrix=cost_matrix)
+
+from scipy.optimize import linprog
+import numpy as np
+
+def getbestassignforclusterandR(
+    num_robots: int,
+    costsites: np.array,
+    listusedRgroups: list,
+    cluster: list,
+    base: Site,
+    Robots: list,
+    clst: bool = False,
+) -> ScenarioAttribution:
+    """ 
+    Iterates through possible team allocations and selects the optimal scenario 
+    using a greedy approach that considers travel cost and workload.
+    """
+    num_sites = len(costsites)
+    possible_assignments = list(itertools.product(listusedRgroups, repeat=num_sites))
+
+    scenario_costs_dict = {}
+    scenariosdict = {}
+
+    for assignment in possible_assignments:
+        sce = ScenarioAttribution(clusterinscenario=cluster, scenario=assignment, totalcost=0.0, costmatrix=costsites)
+
+        # Call the updated cost function dynamically
+        sce = calculate_path_cost_estim(
+            sce=sce,
+            Robots=Robots[:num_robots],
+            Clusters=cluster if clst else [],
+            Sites=cluster if not clst else [],
+            listusedRgroups=listusedRgroups,
+            base=base,
+            level="cluster" if clst else "site",
+        )
+
+        scenariosdict[assignment] = sce
+        scenario_costs_dict[assignment] = sce.totalcost
+
+    # Find the optimal scenario (minimum total cost)
+    min_cost = min(scenario_costs_dict.values())
+    optimal_assignment = max((k for k, v in scenario_costs_dict.items() if v == min_cost), key=sum)
+    
+    return scenariosdict[optimal_assignment]
+
+def Assign_robots_to_scenario(scenario, Robots, Clusters, listusedRgroups, base=Site(poi=[], robots=[])):
+    """ Optimized robot-to-cluster assignment with dynamic scheduling """
+    available_robots = Robots[:]
+
+    for cluster_index, (assignment, cluster) in enumerate(zip(scenario.scenario, Clusters)):
+        cluster.centroid_of_sites_2d  # Ensure cluster has a centroid
+        
+        # 🔥 **Fix: Ensure `assignment` exists in `listusedRgroups` before indexing**
+        if assignment not in listusedRgroups:
+            print(f"[WARNING] Assignment {assignment} not found in listusedRgroups: {listusedRgroups}")
+            continue  # Skip incorrect assignments
+        
+        costaction = scenario.costmatrix[cluster_index][listusedRgroups.index(assignment)]
+        robot_queue = []
+
+        # 🔥 **Use a priority queue to efficiently select best robots**
+        for r in available_robots:
+            travel_cost = distance(r.loc, cluster.sites[0].center) / 1.5
+            heapq.heappush(robot_queue, (r.currentpathcost + travel_cost + costaction, r))
+
+        # ✅ **Assign robots to clusters**
+        for _ in range(assignment):
+            if robot_queue:
+                min_cost_robot = heapq.heappop(robot_queue)[1]
+                min_cost_robot.currentpathcost += costaction
+                min_cost_robot.loc = cluster.sites[0].center
+                cluster.robots.append(min_cost_robot)
+                available_robots.remove(min_cost_robot)
+            else:
+                print(f"[WARNING] Not enough robots for assignment {assignment} in cluster {cluster.name}")
+
+        # ✅ **Assign robots to individual sites within the cluster**
+        for sassign, site in zip(cluster.bestscenario[str(assignment)], cluster.sites):
+            robot_queue = []
+
+            for r in available_robots:
+                travel_cost = distance(r.loc, site.center) / 1.5
+                heapq.heappush(robot_queue, (r.currentpathcost + travel_cost, r))
+
+            for _ in range(sassign):
+                if robot_queue:
+                    best_robot = heapq.heappop(robot_queue)[1]
+                    best_robot.currentpathcost += distance(best_robot.loc, site.center) / 1.5
+                    best_robot.loc = site.center
+                    best_robot.histo.append(site.name)
+                    site.robots.append(best_robot)
+                    available_robots.remove(best_robot)
+                else:
+                    print(f"[WARNING] Not enough robots for site {site.name} in cluster {cluster.name}")
 
     return scenario
 
-def getbestassignforclusterandR(num_robots=0, costsites=np.array([]),listusedRgroups=[], cluster=[], base=Site(poi=[], robots=[]),level="site",Robots=[]):
-    """ Go through all possible assignement scenario for a given number of sites and robots and select the optimal allocation """    
-    
-    # Example data
-    cost_matrix = costsites
-    num_sites = len(cost_matrix)
-    # Generate all possible robot assignments to sites
-    possible_assignments = list(product(listusedRgroups, repeat=num_sites))
-    # print("in get best assign cluster and R",num_robots, len(possible_assignments))
-    # Calculate and store the cost for each generated scenario
-    scenario_costs_dict = {}
-    scenariosdict= {}
-    for assignment in possible_assignments:
-        
-        sce = ScenarioAttribution(clusterinscenario=cluster,scenario=assignment, numrobots=num_robots,totalcost=0.0,costmatrix=cost_matrix)
-        
-        scenariosdict[assignment] = calculate_path_cost_estim(scenario=sce,Robots=Robots[:num_robots],TaskList=cluster,listusedRgroups=listusedRgroups,base=base,level=level)
-        scenario_costs_dict[assignment] = sce.totalcost
-        # print("scenario and cost",scenariosdict[assignment].scenario, scenario_costs_dict[assignment])
-    
-    min_cost = min(scenario_costs_dict.values())
-    optimal_cost = max((k for k, v in scenario_costs_dict.items() if v == min_cost), key=sum)
-    optimal_scenario = scenariosdict[optimal_cost]
-    # print("LE OPTIMAL", optimal_scenario.scenario, optimal_scenario.totalcost, [s.name for s in cluster], num_robots)
-    return optimal_scenario
-           
-def Assign_robots_to_scenario(
-    scenario, Robots=[], Clusters=[], costsites=[], listusedRgroups=[], base=Site(poi=[], robots=[])
-):
-    """ 
-    Assign robots optimally to a given scenario of cluster and site allocations. 
-    - Ensures efficient workload distribution.
-    - Prioritizes minimizing makespan.
-    """
-
-    idx = 0  # Keeps track of scenario step
-
-    for assignment, cluster in zip(scenario.scenario, Clusters):
-        cluster.centroid_of_sites_2d  # Ensure cluster centroid is up-to-date
-        available_robots = Robots[:]  # Copy robot list (to track availability)
-        
-        # ✅ Retrieve the **precomputed** cost estimation
-        costaction = scenario.costmatrix[idx][listusedRgroups.index(assignment)]
-
-        # ✅ Assign robots **to clusters first**
-        while len(cluster.robots) < assignment:
-            
-            assigncost = [
-                costaction + r.currentpathcost + distance(r.loc, cluster.sites[0].center) / 1.5
-                for r in available_robots
-            ]
-
-            # ✅ Pick the **best** robot (one with **minimum cost accumulation**)
-            best_robot_idx = assigncost.index(min(assigncost))
-            best_robot = available_robots[best_robot_idx]
-
-            # ✅ Assign robot to the cluster
-            cluster.robots.append(available_robots[best_robot_idx])
-            available_robots[best_robot_idx].currentpathcost += min(assigncost)  # 🔥 Accumulate **real execution cost**
-            available_robots[best_robot_idx].loc = cluster.sites[0].center  # Move robot to first site in cluster
-
-            # ✅ Remove assigned robot from available list
-            available_robots.pop(best_robot_idx)
-
-        
-
-        # ✅ **Second Phase: Assign Robots to Individual Sites**
-        # print("best scenario for cluster ", cluster.name, " with ", [s.name for s in cluster.sites], "  scenario: ",cluster.bestscenario[str(assignment)])
-        for r in cluster.robots:
-            r.currentpathcost = 0
-            r.histo = []
-            r.loc = base.center
-        # print("clusterobots ", [(r.name) for r in cluster.robots], [(s.robots) for s in cluster.sites])
-        _, clustersitescost = get_weights_of_sites(sites=cluster.sites, robots=cluster.robots)
-        # print(clustersitescost)
-        cost_matrix = clustersitescost
-
-        # print(cost_matrix)
-        idxsite = 0
-        for sassign, site in zip(cluster.bestscenario[str(assignment)], cluster.sites):
-            
-            available_robots_in_site = cluster.robots[:]  # Reuse robots assigned to the cluster
-            costactionsite = cost_matrix[idxsite][listusedRgroups.index(sassign)]
-            target_location = site.center
-            # print(sassign, site.name, listusedRgroups, costactionsite)
-            while len(site.robots) < sassign:
-                
-                siteassigncost = []
-                for r in available_robots_in_site:
-                    
-                    # ✅ **Assign robots based on travel distance to the site**
-                    travel_time = round(distance(r.loc, target_location) / 1.5, 2)
-                    accumulated_cost = costactionsite + r.currentpathcost + travel_time
-                    # print(r.name, r.loc, r.site, site.name, site.center,distance(r.loc, target_location), accumulated_cost, ": ", r.currentpathcost, travel_time, costactionsite)
-                    siteassigncost.append(accumulated_cost)
-
-                # print("costactionsite,travel_time,accumulated_cost,siteassigncost,sassign, site      ",costactionsite,travel_time,accumulated_cost,siteassigncost,sassign, site.name)
-                # ✅ Pick the **best** robot for the site
-                best_robot_idx = siteassigncost.index(min(siteassigncost))
-                best_robot = available_robots_in_site[best_robot_idx]
-
-                # print(siteassigncost, best_robot.name)
-                # ✅ Assign robot **and update movement cost**
-                site.robots.append(best_robot)
-                best_robot.currentpathcost += min(siteassigncost)
-                best_robot.loc = site.center
-                best_robot.histo.append(site.name)
-                best_robot.site = site.name
-
-                # ✅ Remove from available site-level list
-                available_robots_in_site.remove(available_robots_in_site[best_robot_idx])
-
-            for r in site.robots:
-                r.currentpathcost = max([r.currentpathcost for r in site.robots])
-
-            idxsite += 1
-        idx += 1  # Move to next step
-
-    return scenario  # ✅ Return the scenario with assigned robots
-
-
-
-
-
-# for assignment, task in zip(scenario.scenario, TaskList):
-#         available_robots = Robots[:]  # Reset available robots per site
-#         # if level =="cluster":
-#         #     target_location = min(task.sites, key=lambda s: distance(base.center, s.center)).center
-#         # else:
-#         #     target_location = task.center
-#         target_location = task.center
-#         costaction = scenario.costmatrix[idx][listusedRgroups.index(assignment)]
-
-#         while len(task.robots) < assignment:        
-            # assigncost = []
-            # for r in available_robots:
-                
-            #     # ✅ **Assign robots based on travel distance to the site**
-            #     travel_time = round(distance(r.loc, target_location) / 1.5, 2)
-            #     accumulated_cost = costaction + r.currentpathcost + travel_time
-            #     assigncost.append(accumulated_cost)
-
-#             # ✅ **Choose the best robot (min cost robot)**
-#             best_robot_idx = assigncost.index(min(assigncost))
-#             best_robot = available_robots[best_robot_idx]
-
-#             # ✅ Assign robot and track its arrival time
-#             task.robots.append(best_robot)
-#             best_robot.currentpathcost += assigncost[best_robot_idx]
-#             best_robot.loc = target_location
-#             best_robot.histo.append(task.name)
-
-#             available_robots.remove(available_robots[best_robot_idx])
-#             # # Sync only those robots whose arrival times are far off
-#             # site_sync_time = max(avg_site_cost, max_site_cost * 0.8)
-
-#             for r in task.robots:
-#                 r.currentpathcost = max([r.currentpathcost for r in task.robots])
-
-#         idx += 1  
-
-#     for r in Robots:
-#         r.currentpathcost += round(distance(r.loc, base.center), 2) 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-def getbestassignfrommission(mission=Mission(sites=[], robots=[]), minnbofcluster=2, get_all_time=True):
-    """ Main algorithm, Clusterize a number of sites into equal weight clusters and identify the best scenario of pre-allocation possible for a number of robots and number of sites  """ 
+def getbestassignfrommission(mission, minnbofcluster=2, get_all_time=True):
+    """ Main algorithm, Clusterize sites and identify the best robot allocation scenario """
 
     t_alloc_full_0 = time.perf_counter()
-    
-    t_clustering_0 = time.perf_counter()  
+
+    # ✅ Step 1: Get Valid Robot Groups
     listusedRgroups = getlistusedRgroups(robots=mission.robots)
 
-    clusterslist=[]
-    for numcl in range(minnbofcluster,len(mission.sites)//2 +1):
-        clt =Weightned_Cluster(mission=mission,numb_clt=numcl)
-        # showclusters(mission, clt, mission.sites[0])
+    # ✅ Step 2: Cluster the Sites (Cluster list is already correct)
+    clusterslist = []
+    for numcl in range(minnbofcluster, len(mission.sites) // 2 + 1):
+        clt, cltwei, cltcos = Weightned_Cluster(mission=mission, numb_clt=numcl)
         clusterslist.append(clt)
 
-    t_clustering_1 = time.perf_counter() 
-    # We evaluate the best tour cost for every allocation possibility 
-    all_scenario_for_clusters=[]
-    all_scenario_for_clusters_costmatrix=[]
-    
-    # print("\n","BEFORE FIRST LOOP", "\n", "clusterslist",clusterslist, "\n")
-    t_sce_sites_0 = time.perf_counter() 
-    for XCcluster in clusterslist:
-        scenarioXCclusterlist=[]
-        scenarioXCclusterlist_costmatrix=[]
-        # print("clusterisation in", len(XCcluster)," Clusters")
-        for cluster in XCcluster:
-            weirghtofsites, clustersitescost=get_weights_of_sites(sites=cluster.sites, robots=mission.robots,listrused=listusedRgroups)
-            # print([s.name for s in cluster.sites], "\n",clustersitescost,"\n",weirghtofsites)
-            scenarioclusterlist=[]
-            scenarioclusterlist_costmatrix=[]
+    # ✅ Step 3: Compute Costs for Each Cluster
+    all_scenario_for_clusters = []
+    all_scenario_for_clusters_costmatrix = []
 
+    for XCcluster in clusterslist:
+        scenarioXCclusterlist = []
+        scenarioXCclusterlist_costmatrix = []
+
+        for cluster in XCcluster:
+            _, clustersitescost = get_weights_of_sites(sites=cluster.sites, robots=mission.robots, listrused=listusedRgroups)
+
+            scenarioclusterlist = []
+            scenarioclusterlist_costmatrix = []
+
+            # 🔥 **Fix: Ensure We Test All Valid Team Sizes**
             for r in listusedRgroups:
-                
-                sce = getbestassignforclusterandR(num_robots=r, costsites=clustersitescost, listusedRgroups=getlistusedRgroups(mission.robots[:r]), cluster=cluster.sites, base=mission.sites[0], Robots=mission.robots, level="site")
+                sce = getbestassignforclusterandR(
+                    num_robots=r,
+                    costsites=clustersitescost,
+                    listusedRgroups=listusedRgroups[: listusedRgroups.index(r) + 1],  # ✅ Ensuring all possible team sizes
+                    cluster=cluster.sites,
+                    base=mission.sites[0],
+                    Robots=mission.robots,
+                )
                 scenarioclusterlist.append(sce)
                 scenarioclusterlist_costmatrix.append(sce.totalcost)
-                cluster.bestscenario[str(r)]=sce.scenario
-                # print("FINAL TOTAL COST", listusedRgroups[:(listusedRgroups.index(r)+1)], sce.totalcost, r, sce.scenario)
+                cluster.bestscenario[str(r)] = sce.scenario  # ✅ Store best scenario
 
             scenarioXCclusterlist.append(scenarioclusterlist)
             scenarioXCclusterlist_costmatrix.append(scenarioclusterlist_costmatrix)
-            
 
         all_scenario_for_clusters.append(scenarioXCclusterlist)
         all_scenario_for_clusters_costmatrix.append(scenarioXCclusterlist_costmatrix)
-    t_sce_sites_1 = time.perf_counter()       
-    # We find the best allocation for every XC clusters
-    scenarioC=[]
-    costC=[]
-    # print("CLUSTER PART \n")
 
-    t_sce_cluster_0 = time.perf_counter()
-    for XCclustercost, CCluster in zip(all_scenario_for_clusters_costmatrix,clusterslist):
-        # print("\n", len(XCclustercost), len(CCluster), XCclustercost, CCluster, "\n")
-        sce = getbestassignforclusterandR(num_robots=listusedRgroups[-1], Robots=mission.robots, costsites=XCclustercost, listusedRgroups=listusedRgroups, cluster=CCluster, base=mission.sites[0], level="cluster")
+    # ✅ Step 4: Select the Best Cluster Allocation
+    scenarioC = []
+    costC = []
+
+    for XCclustercost, CCluster in zip(all_scenario_for_clusters_costmatrix, clusterslist):
+        sce = getbestassignforclusterandR(
+            num_robots=listusedRgroups[-1],
+            Robots=mission.robots,
+            costsites=XCclustercost,
+            listusedRgroups=listusedRgroups,
+            cluster=CCluster,
+            base=mission.sites[0],
+        )
         costC.append(sce.totalcost)
         scenarioC.append(sce)
 
-    t_sce_cluster_1 = time.perf_counter()
+    # ✅ Step 5: Assign Robots to the Best Scenario
+    best_scenario_index = costC.index(min(costC))
+    best_scenario = scenarioC[best_scenario_index]
+
+    print(f"best scenario is: {best_scenario.scenario} with cost of: {min(costC)}")
+
+    clusters = best_scenario.clusterinscenario
+    Assign_robots_to_scenario(
+        scenario=best_scenario,
+        Robots=mission.robots,
+        Clusters=clusters,
+        listusedRgroups=listusedRgroups,
+        base=mission.sites[0],
+    )
+
+    # ✅ Final Debug Info
     t_alloc_full_1 = time.perf_counter()
+    print(f"Time to calculate the pre-alloc: {t_alloc_full_1 - t_alloc_full_0}")
 
-    # print("Possibles clustering repartition with best scenario :", [i.scenario for i in scenarioC], "with cost of :",  costC)
-    # print(clusterslist)
-    
-    print("best scenario is:",scenarioC[costC.index(min(costC))].scenario, "with cost of :",  min(costC))    
-    
-    # print(all_scenario_for_clusters[scenarioC.index(scenarioC[costC.index(min(costC))])], "\n")
-    clusters= scenarioC[costC.index(min(costC))].clusterinscenario
-    
-    t_assignrob_0 = time.perf_counter()
-    # print("BAH VOYONS: ", scenarioC[costC.index(min(costC))])
-    Assign_robots_to_scenario(scenario=scenarioC[costC.index(min(costC))], Robots=mission.robots,Clusters=clusters, listusedRgroups=listusedRgroups, base=mission.sites[0])
-    t_assignrob_1 = time.perf_counter()
+    return clusters, best_scenario
 
-    allocationscenario = scenarioC[costC.index(min(costC))]
-
-
-    t_alloc_full_1 = time.perf_counter()
-    print("time to calculate the pre-alloc:", t_alloc_full_1-t_alloc_full_0,)
-    print("time of the Clustering:", t_clustering_1-t_clustering_0)
-    print("time for scenario allocation (sites scenario estim):", t_sce_sites_1-t_sce_sites_0)
-    print("time for scenario allocation (cluster final scenario estim):", t_sce_cluster_1-t_sce_cluster_0)
-    print("time to assign the robots:", t_assignrob_1-t_assignrob_0,"\n")
-
-    return clusters, allocationscenario
 
 def findpoint(name="", sites=[]):
     """  """
@@ -1502,70 +1336,29 @@ def convert_toSTN(plan: Path, output: Path, domain, problem: Path):
     writer = PDDLWriter(upf_pb)
     writer.write_plan(upf_plan_stn, output)
 
-def p_plan(plan_path, robot_state, mission):
-    """ 
-    Parses the plan to extract:
-    - The last **position** and **conf** state of each robot.
-    - The **max execution time** of all robots in the plan.
-    - The **individual execution times** of each robot.
+def p_plan(plan_path,robot_state):
+    """ Parses the plan to find the last position and state of each robot. """
 
-    Args:
-        plan_path (str): The path to the plan file.
-        robot_state (dict): The dictionary tracking robot positions & states.
-
-    Returns:
-        tuple: Updated robot_state, max_execution_time, robot_execution_times
-    """
-    
     with open(plan_path, 'r') as file:
         plan = file.read()
 
     actions = plan.strip().split('\n')
-    robot_execution_times = defaultdict(float)  # Stores max execution time per robot
-
     for action in actions:
         if action:
             time, details = action.split(":")
-            start_time = float(time.strip())  # Convert time to float
             details = details.split("[")[0].strip()
             action_name, *params = details.split()
-            duration = float(action.split("[")[-1].split("]")[0].strip())  # Extract action duration
-            end_time = start_time + duration  # Compute action end time
-            
-            # Store the latest execution time per robot
-            for r in robot_state.keys():
-                if r in action:
-                    robot_execution_times[r] = max(robot_execution_times[r], end_time)
-
-            # **Extract final position and configuration**
             if "observe" in action_name:
                 robot1 = params[0]
                 if "observe_2r" in action_name:
                     robot2 = params[1]
-                    robot_state[robot2]['position'] = params[-2]
-                    robot_state[robot2]['conf'] = "airconf"
-                    robot_state[robot2]['time'] =end_time
-                    robot_state[robot2]['site'] = params[-1].split(')')[0]
-                    poi_obj = next((p for s in mission.sites for p in s.poi if p.name == params[-2]), None)
-                    if poi_obj:
-                        robot_state[robot2]['loc'] = poi_obj.loc
-                robot_state[robot1]['position'] = params[-2]
-                robot_state[robot1]['conf'] = "airconf"
-                robot_state[robot1]['time'] = end_time
-                robot_state[robot1]['site'] = params[-1].split(')')[0]
-                poi_obj = next((p for s in mission.sites for p in s.poi if p.name == params[-2]), None)
-                if poi_obj:
-                        robot_state[robot1]['loc'] = poi_obj.loc
-            elif "navigation" in action_name or "switch" in action_name or "translate_data" in action_name:
+                    robot_state[robot2] = {'position': params[-2], 'conf': "airconf"}
+                robot_state[robot1] = {'position': params[-2], 'conf': "airconf"}
+            elif "navigation" in action_name or "switch" in action_name:
                 robot = params[0]
-                robot_state[robot]['position'] = params[-2]
-                robot_state[robot]['time'] = end_time  # Update last action time
-                robot_state[robot]['site'] = params[-1].split(')')[0]
-                poi_obj = next((p for s in mission.sites for p in s.poi if p.name == params[-2]), None)
-                if poi_obj:
-                        robot_state[robot]['loc'] = poi_obj.loc
-
-                # Update robot's configuration based on action type
+                if robot not in robot_state:
+                    robot_state[robot] = {'position': None, 'conf': None}
+                robot_state[robot]['position'] = params[-2]  # assuming last position before ']'
                 if "airwater" in action_name:
                     robot_state[robot]['conf'] = 'waterconf'
                 elif "waterair" in action_name:
@@ -1575,20 +1368,7 @@ def p_plan(plan_path, robot_state, mission):
                 elif "landing" in action_name:
                     robot_state[robot]['conf'] = 'groundconf'
 
-            elif "change_site" in action_name :
-                robot = params[0]
-                robot_state[robot]['position'] = params[-1].split(')')[0]
-                robot_state[robot]['time'] = end_time  # Update last action time
-                robot_state[robot]['site'] = params[2]
-                poi_obj = next((p for s in mission.sites for p in s.poi if p.name == params[-1].split(')')[0]), None)
-                if poi_obj:
-                        robot_state[robot]['loc'] = poi_obj.loc
-
-    # Find the maximum execution time among all robots
-    max_execution_time = max(robot_execution_times.values(), default=0)
-
-    return robot_state, max_execution_time, robot_execution_times
-
+    return robot_state
 
 def trim_plan_file(file_path):
     # Flag to start recording lines
@@ -1788,30 +1568,6 @@ def filtrate_plan(plan):
     for act in plan._stn.distances.keys():
         print(act.kind)
 
-def check_domain_arms(domain_file):
-    # Function checking for the timed-initial-literals requirement that is not yet added to plansys2 pddl parser
-    with open(domain_file, 'r') as file:
-        lines = file.readlines()
-
-    # Check if ":timed-initial-literals" is in the second line
-    if ":timed-initial-literals" not in lines[1]:
-        print("Adding missing requirement ':timed-initial-literals' to domain file.")
-
-        # Insert ":timed-initial-literals" into the requirements section
-        if ":requirements" in lines[1]:
-            lines[1] = lines[1].strip()[:-1] + ":timed-initial-literals)\n"  # Append the requirement properly
-        else:
-            lines.insert(1, "(:requirements :timed-initial-literals)\n")  # Create a new requirements line
-
-        # Write the new domain file to /tmp/domain-optic.pddl
-        new_domain_file = "/tmp/domain-optic.pddl"
-        with open(new_domain_file, 'w') as file:
-            file.writelines(lines)
-
-        return new_domain_file  # Return the new domain file path
-
-    print("Domain file already contains ':timed-initial-literals'.")
-    return domain_file  # Use the original file if no modification was needed
 
 # print(upf_plan_stn)
 
@@ -1843,358 +1599,22 @@ def check_domain_arms(domain_file):
 # merge_for_single_path(plans=[plan1,plan2], output=output, domain=domain, problems=problems)
 
 
-def find_optimal_path(cluster_sites, base_site):
-    """
-    Compute the optimal site visit order using TSP (Traveling Salesman Problem).
-    Ensures path starts and ends at the base.
-    """
-    # Extract site names and positions
-    site_names = [base_site.name] + [site.name for site in cluster_sites] + [base_site.name]
-    site_positions = np.array([base_site.center[:2]] + [site.center[:2] for site in cluster_sites] + [base_site.center[:2]])
+mission = Mission(sites=[Site(poi=[Poi(mediums=[0, 1], name='cpbase', loc=(-108.0, -134.5, 0), typepoi='transition')], robots=[], name='base', center=(-108.0, -134.5, 0), size=10), Site(poi=[Poi(mediums=[1], name='cpsite4', loc=(203.4, 191.2, 0), typepoi='survey'), Poi(mediums=[-1], name='pp8', loc=(198.7, 195.9, -1), typepoi='sample'), Poi(mediums=[-1, 1], name='sp10', loc=(206.1, 191.9, 0), typepoi='transition')], robots=[], name='site4', center=(203.4, 191.2, 0), size=10), Site(poi=[Poi(mediums=[1], name='cpsite7', loc=(412.1, 485.7, 1), typepoi='survey'), Poi(mediums=[-1], name='pp14', loc=(416.5, 484.3, -3), typepoi='sample'), Poi(mediums=[-1], name='pp15', loc=(403.7, 489.3, -3), typepoi='sample'), Poi(mediums=[-1], name='pp16', loc=(417.7, 494.8, -3), typepoi='sample'), Poi(mediums=[-1, 1], name='sp17', loc=(421.5, 487.1, 0), typepoi='transition'), Poi(mediums=[-1, 1], name='sp18', loc=(402.7, 484.5, 0), typepoi='transition'), Poi(mediums=[-1, 1], name='sp19', loc=(414.0, 478.5, 0), typepoi='transition'), Poi(mediums=[-1, 1], name='sp20', loc=(417.7, 479.1, 0), typepoi='transition')], robots=[], name='site7', center=(412.1, 485.7, 0), size=30), Site(poi=[Poi(mediums=[1], name='cpsite2', loc=(871.0, 799.8, 1), typepoi='survey'), Poi(mediums=[-1], name='pp4', loc=(867.2, 794.9, -1), typepoi='sample'), Poi(mediums=[-1, 1], name='sp5', loc=(872.1, 804.5, 0), typepoi='transition')], robots=[], name='site2', center=(871.0, 799.8, 0), size=10), Site(poi=[Poi(mediums=[1], name='cpsite6', loc=(-183.3, 750.6, 1), typepoi='survey'), Poi(mediums=[-1], name='pp13', loc=(-185.8, 755.6, -1), typepoi='sample'), Poi(mediums=[-1, 1], name='sp16', loc=(-187.7, 750.8, 0), typepoi='transition')], robots=[], name='site6', center=(-183.3, 750.6, 0), size=10), Site(poi=[Poi(mediums=[1], name='cpsite1', loc=(58.0, 361.5, 1), typepoi='survey'), Poi(mediums=[-1], name='pp1', loc=(71.9, 375.9, -3), typepoi='sample'), Poi(mediums=[-1], name='pp2', loc=(59.9, 363.5, -3), typepoi='sample'), Poi(mediums=[-1], name='pp3', loc=(66.8, 348.6, -3), typepoi='sample'), Poi(mediums=[-1, 1], name='sp1', loc=(64.1, 359.9, 0), typepoi='transition'), Poi(mediums=[-1, 1], name='sp2', loc=(60.0, 371.1, 0), typepoi='transition'), Poi(mediums=[-1, 1], name='sp3', loc=(71.9, 375.8, 0), typepoi='transition'), Poi(mediums=[-1, 1], name='sp4', loc=(43.0, 373.1, 0), typepoi='transition')], robots=[], name='site1', center=(58.0, 361.5, 0), size=30), Site(poi=[Poi(mediums=[1], name='cpsite3', loc=(179.3, -467.0, 1), typepoi='survey'), Poi(mediums=[-1], name='pp5', loc=(164.7, -464.4, -3), typepoi='sample'), Poi(mediums=[-1], name='pp6', loc=(184.7, -477.2, -3), typepoi='sample'), Poi(mediums=[-1], name='pp7', loc=(187.5, -468.7, -3), typepoi='sample'), Poi(mediums=[-1, 1], name='sp6', loc=(168.5, -457.8, 0), typepoi='transition'), Poi(mediums=[-1, 1], name='sp7', loc=(171.3, -455.9, 0), typepoi='transition'), Poi(mediums=[-1, 1], name='sp8', loc=(186.1, -459.9, 0), typepoi='transition'), Poi(mediums=[-1, 1], name='sp9', loc=(176.2, -473.7, 0), typepoi='transition')], robots=[], name='site3', center=(179.3, -467.0, 0), size=30), Site(poi=[Poi(mediums=[1], name='cpsite5', loc=(639.4, -878.6, 1), typepoi='survey'), Poi(mediums=[-1], name='pp9', loc=(652.7, -865.8, -4), typepoi='sample'), Poi(mediums=[-1], name='pp10', loc=(651.2, -877.0, -4), typepoi='sample'), Poi(mediums=[-1], name='pp11', loc=(652.0, -894.0, -4), typepoi='sample'), Poi(mediums=[-1], name='pp12', loc=(640.4, -859.7, -4), typepoi='sample'), Poi(mediums=[-1, 1], name='sp11', loc=(621.9, -862.6, 0), typepoi='transition'), Poi(mediums=[-1, 1], name='sp12', loc=(650.5, -864.0, 0), typepoi='transition'), Poi(mediums=[-1, 1], name='sp13', loc=(644.6, -889.2, 0), typepoi='transition'), Poi(mediums=[-1, 1], name='sp14', loc=(658.3, -882.2, 0), typepoi='transition'), Poi(mediums=[-1, 1], name='sp15', loc=(621.2, -867.5, 0), typepoi='transition')], robots=[], name='site5', center=(639.4, -878.6, 0), size=40)], robots=[Robot(name='robot0', loc=(-108.0, -134.5, 0), medium=0, histo=[], currentpathcost=0, poi='cpbase', site='base', energy=10000), Robot(name='robot1', loc=(-108.0, -134.5, 0), medium=0, histo=[], currentpathcost=0, poi='cpbase', site='base', energy=10000), Robot(name='robot2', loc=(-108.0, -134.5, 0), medium=0, histo=[], currentpathcost=0, poi='cpbase', site='base', energy=10000), Robot(name='robot3', loc=(-108.0, -134.5, 0), medium=0, histo=[], currentpathcost=0, poi='cpbase', site='base', energy=10000), Robot(name='robot4', loc=(-108.0, -134.5, 0), medium=0, histo=[], currentpathcost=0, poi='cpbase', site='base', energy=10000), Robot(name='robot5', loc=(-108.0, -134.5, 0), medium=0, histo=[], currentpathcost=0, poi='cpbase', site='base', energy=10000), Robot(name='robot6', loc=(-108.0, -134.5, 0), medium=0, histo=[], currentpathcost=0, poi='cpbase', site='base', energy=10000)], objective='assess', arenasize=1000, sitesize=(10, 50))
 
-    # Compute distance matrix
-    dist_matrix = cdist(site_positions, site_positions, metric='euclidean')
+# mission2 = Mission(sites=[Site(poi=[Poi(mediums=[0, 1], name='cpbase', loc=(-108.0, -134.5, 0), typepoi='transition')], robots=[], name='base', center=(-108.0, -134.5, 0), size=10), Site(poi=[Poi(mediums=[1], name='cpsite4', loc=(203.4, 191.2, 0), typepoi='survey'), Poi(mediums=[-1], name='pp8', loc=(198.7, 195.9, -1), typepoi='sample'), Poi(mediums=[-1, 1], name='sp10', loc=(206.1, 191.9, 0), typepoi='transition')], robots=[], name='site4', center=(203.4, 191.2, 0), size=10), Site(poi=[Poi(mediums=[1], name='cpsite7', loc=(412.1, 485.7, 1), typepoi='survey'), Poi(mediums=[-1], name='pp14', loc=(416.5, 484.3, -3), typepoi='sample'), Poi(mediums=[-1], name='pp15', loc=(403.7, 489.3, -3), typepoi='sample'), Poi(mediums=[-1], name='pp16', loc=(417.7, 494.8, -3), typepoi='sample'), Poi(mediums=[-1, 1], name='sp17', loc=(421.5, 487.1, 0), typepoi='transition'), Poi(mediums=[-1, 1], name='sp18', loc=(402.7, 484.5, 0), typepoi='transition'), Poi(mediums=[-1, 1], name='sp19', loc=(414.0, 478.5, 0), typepoi='transition'), Poi(mediums=[-1, 1], name='sp20', loc=(417.7, 479.1, 0), typepoi='transition')], robots=[], name='site7', center=(412.1, 485.7, 0), size=30), Site(poi=[Poi(mediums=[1], name='cpsite2', loc=(871.0, 799.8, 1), typepoi='survey'), Poi(mediums=[-1], name='pp4', loc=(867.2, 794.9, -1), typepoi='sample'), Poi(mediums=[-1, 1], name='sp5', loc=(872.1, 804.5, 0), typepoi='transition')], robots=[], name='site2', center=(871.0, 799.8, 0), size=10), Site(poi=[Poi(mediums=[1], name='cpsite6', loc=(-183.3, 750.6, 1), typepoi='survey'), Poi(mediums=[-1], name='pp13', loc=(-185.8, 755.6, -1), typepoi='sample'), Poi(mediums=[-1, 1], name='sp16', loc=(-187.7, 750.8, 0), typepoi='transition')], robots=[], name='site6', center=(-183.3, 750.6, 0), size=10),Site(poi=[Poi(mediums=[1], name='cpsite1', loc=(58.0, 361.5, 1), typepoi='survey'), Poi(mediums=[-1], name='pp1', loc=(71.9, 375.9, -3), typepoi='sample'), Poi(mediums=[-1], name='pp2', loc=(59.9, 363.5, -3), typepoi='sample'), Poi(mediums=[-1], name='pp3', loc=(66.8, 348.6, -3), typepoi='sample'), Poi(mediums=[-1, 1], name='sp1', loc=(64.1, 359.9, 0), typepoi='transition'), Poi(mediums=[-1, 1], name='sp2', loc=(60.0, 371.1, 0), typepoi='transition'), Poi(mediums=[-1, 1], name='sp3', loc=(71.9, 375.8, 0), typepoi='transition'), Poi(mediums=[-1, 1], name='sp4', loc=(43.0, 373.1, 0), typepoi='transition')], robots=[], name='site1', center=(58.0, 361.5, 0), size=30), Site(poi=[Poi(mediums=[1], name='cpsite3', loc=(179.3, -467.0, 1), typepoi='survey'), Poi(mediums=[-1], name='pp5', loc=(164.7, -464.4, -3), typepoi='sample'), Poi(mediums=[-1], name='pp6', loc=(184.7, -477.2, -3), typepoi='sample'), Poi(mediums=[-1], name='pp7', loc=(187.5, -468.7, -3), typepoi='sample'), Poi(mediums=[-1, 1], name='sp6', loc=(168.5, -457.8, 0), typepoi='transition'), Poi(mediums=[-1, 1], name='sp7', loc=(171.3, -455.9, 0), typepoi='transition'), Poi(mediums=[-1, 1], name='sp8', loc=(186.1, -459.9, 0), typepoi='transition'), Poi(mediums=[-1, 1], name='sp9', loc=(176.2, -473.7, 0), typepoi='transition')], robots=[], name='site3', center=(179.3, -467.0, 0), size=30), Site(poi=[Poi(mediums=[1], name='cpsite5', loc=(639.4, -878.6, 1), typepoi='survey'), Poi(mediums=[-1], name='pp9', loc=(652.7, -865.8, -4), typepoi='sample'), Poi(mediums=[-1], name='pp10', loc=(651.2, -877.0, -4), typepoi='sample'), Poi(mediums=[-1], name='pp11', loc=(652.0, -894.0, -4), typepoi='sample'), Poi(mediums=[-1], name='pp12', loc=(640.4, -859.7, -4), typepoi='sample'), Poi(mediums=[-1, 1], name='sp11', loc=(621.9, -862.6, 0), typepoi='transition'), Poi(mediums=[-1, 1], name='sp12', loc=(650.5, -864.0, 0), typepoi='transition'), Poi(mediums=[-1, 1], name='sp13', loc=(644.6, -889.2, 0), typepoi='transition'), Poi(mediums=[-1, 1], name='sp14', loc=(658.3, -882.2, 0), typepoi='transition'), Poi(mediums=[-1, 1], name='sp15', loc=(621.2, -867.5, 0), typepoi='transition')], robots=[], name='site5', center=(639.4, -878.6, 0), size=40)], robots=[Robot(name='robot0', loc=(-108.0, -134.5, 0), medium=0, histo=[], currentpathcost=0, poi='cpbase', site='base', energy=10000), Robot(name='robot1', loc=(-108.0, -134.5, 0), medium=0, histo=[], currentpathcost=0, poi='cpbase', site='base', energy=10000), Robot(name='robot2', loc=(-108.0, -134.5, 0), medium=0, histo=[], currentpathcost=0, poi='cpbase', site='base', energy=10000), Robot(name='robot3', loc=(-108.0, -134.5, 0), medium=0, histo=[], currentpathcost=0, poi='cpbase', site='base', energy=10000), Robot(name='robot4', loc=(-108.0, -134.5, 0), medium=0, histo=[], currentpathcost=0, poi='cpbase', site='base', energy=10000), Robot(name='robot5', loc=(-108.0, -134.5, 0), medium=0, histo=[], currentpathcost=0, poi='cpbase', site='base', energy=10000), Robot(name='robot6', loc=(-108.0, -134.5, 0), medium=0, histo=[], currentpathcost=0, poi='cpbase', site='base', energy=10000)], objective='assess', arenasize=1000, sitesize=(10, 50))
 
-    # Solve TSP using exact dynamic programming
-    tsp_path = solve_tsp_dynamic_programming(dist_matrix)[0]
-    optimal_order = [site_names[i] for i in tsp_path]
 
-    return optimal_order
 
-def generate_possible_paths(optimal_order, num_robots):
-    """
-    Generate a limited number of subpaths while ensuring all sites are covered.
-    - First path is always the full optimal path.
-    - Subpaths are recursively split, ensuring coverage.
-    - The number of subpaths does not exceed the number of robots.
-    """
+# showmissionsites(mission)
+clusters, allocationscenario = getbestassignfrommission(mission=mission,minnbofcluster=2)
 
-    base = optimal_order[0]
-    sites_only = optimal_order[1:-1]  # Remove start/end base
+print("Clusters:")
+for c in clusters:
+    print(c.name)
+    for s in c.sites:
+        print(s.name)
 
-    # Start with the full optimal path
-    paths = [optimal_order]
 
-    # If we need more paths, split the main path into two
-    if num_robots > 1:
-        midpoint = len(sites_only) // 2
-        paths.append([base] + sites_only[:midpoint] + [base])
-        paths.append([base] + sites_only[midpoint:] + [base])
-
-    # If more robots, generate further splits ensuring all sites remain covered
-    while len(paths) < num_robots:
-        longest_path = max(paths, key=len)  # Find longest path to split
-        if len(longest_path) <= 3:
-            break  # Avoid splitting too much
-
-        midpoint = len(longest_path) // 2
-        new_path1 = longest_path[:midpoint] + [base]
-        new_path2 = [base] + longest_path[midpoint:]
-
-        # Replace the longest path with two shorter paths
-        paths.remove(longest_path)
-        paths.append(new_path1)
-        paths.append(new_path2)
-
-    # Limit paths to the number of robots
-    paths = paths[:num_robots]
-
-    # Debugging
-    print(f"\n🔹 Generated {len(paths)} paths for {num_robots} robots:")
-    for i, path in enumerate(paths):
-        print(f"  Path {i+1}: {path}")
-
-    return paths
-
-def validate_team_allocation(paths, allocation):
-    """
-    Ensure that all sites are covered with at least 2 robots.
-    """
-
-    site_coverage = {site: 0 for path in paths for site in path}
-    
-    for path, robots in zip(paths, allocation):
-        for site in path:
-            site_coverage[site] += robots  # Count how many robots visit each site
-    
-    # Ensure all sites are visited at least twice
-    return all(count >= 2 for site, count in site_coverage.items() if site != 'base')
-
-def generate_team_allocations(num_robots, paths):
-    """
-    Generate valid robot-team allocations across paths.
-    - Ensures at least 2 robots per site.
-    - Uses dynamic allocation filtering.
-    """
-
-    path_count = len(paths)
-    print(f"🔹 Generating team allocations for {num_robots} robots.")
-
-    # Generate valid team sizes dynamically
-    valid_team_sizes = [i+1 for i in range(num_robots)]
-    print(f"✅ Valid team sizes: {valid_team_sizes}")
-
-    valid_distributions = []
-
-    # Try different assignments using itertools.combinations_with_replacement
-    for comb in combinations_with_replacement(valid_team_sizes, path_count):
-        if sum(comb) == num_robots and validate_team_allocation(paths, comb):
-            valid_distributions.append(comb)
-
-    print(f"✅ {len(valid_distributions)} valid team allocations found.")
-    return valid_distributions
-
-
-
-
-def compute_cost_for_team_assignment(paths, robot_distribution, site_dict):
-    """
-    Compute the cost for each robot allocation scenario.
-    """
-    team_costs = []
-
-    for path, team_size in zip(paths, robot_distribution):
-        path_cost = sum(distance(site_dict[path[j]], site_dict[path[j + 1]]) for j in range(len(path) - 1))
-        adjusted_cost = path_cost / team_size  # Larger teams complete tasks faster
-        team_costs.append(adjusted_cost)
-
-    return max(team_costs) if team_costs else float('inf')
-
-def improved_getbestassignforclusterandR(num_robots, costsites, listusedRgroups, cluster, base, Robots):
-    """
-    Optimized function to assign robots to paths using flexible path assignments.
-    """
-    # Step 2: Generate site dictionary with base included
-    site_dict = {site.name: site.center[:2] for site in cluster}
-    site_dict["base"] = base.center[:2]  # Add the base site
-
-    # Step 1: Compute the optimal TSP path for the cluster
-    optimal_order = find_optimal_path(cluster, base)
-
-    # Step 2: Generate multiple candidate paths
-    all_paths = generate_possible_paths(optimal_order, num_robots)
-
-    # Step 3: Generate valid team allocations (dynamically selected paths)
-    valid_allocations = generate_team_allocations(num_robots, all_paths)
-
-    if not valid_allocations:
-        print(f"🚨 No valid team allocations found for {num_robots} robots.")
-        return ScenarioAttribution(clusterinscenario=cluster, scenario=None, numrobots=num_robots, totalcost=float('inf'))
-
-    # Step 4: Compute cost for each valid allocation
-    best_allocation = None
-    best_cost = float('inf')
-
-    for allocation in valid_allocations:
-        cost = compute_cost_for_team_assignment(all_paths, allocation,site_dict)
-        if cost < best_cost:
-            best_cost = cost
-            best_allocation = allocation
-
-    print(f"✅ Best allocation for {num_robots} robots: {best_allocation} with cost {best_cost}")
-
-    return ScenarioAttribution(clusterinscenario=cluster, scenario=best_allocation, numrobots=num_robots, totalcost=best_cost)
-
-# mission = Mission(sites=[Site(poi=[Poi(mediums=[0, 1], name='cpbase', loc=(-108.0, -134.5, 0), typepoi='transition')], robots=[], name='base', center=(-108.0, -134.5, 0), size=10), Site(poi=[Poi(mediums=[1], name='cpsite1', loc=(58.0, 361.5, 1), typepoi='survey'), Poi(mediums=[-1], name='pp1', loc=(71.9, 375.9, -3), typepoi='sample'), Poi(mediums=[-1], name='pp2', loc=(59.9, 363.5, -3), typepoi='sample'), Poi(mediums=[-1], name='pp3', loc=(66.8, 348.6, -3), typepoi='sample'), Poi(mediums=[-1, 1], name='sp1', loc=(64.1, 359.9, 0), typepoi='transition'), Poi(mediums=[-1, 1], name='sp2', loc=(60.0, 371.1, 0), typepoi='transition'), Poi(mediums=[-1, 1], name='sp3', loc=(71.9, 375.8, 0), typepoi='transition'), Poi(mediums=[-1, 1], name='sp4', loc=(43.0, 373.1, 0), typepoi='transition')], robots=[], name='site1', center=(58.0, 361.5, 0), size=30), Site(poi=[Poi(mediums=[1], name='cpsite2', loc=(871.0, 799.8, 1), typepoi='survey'), Poi(mediums=[-1], name='pp4', loc=(867.2, 794.9, -1), typepoi='sample'), Poi(mediums=[-1, 1], name='sp5', loc=(872.1, 804.5, 0), typepoi='transition')], robots=[], name='site2', center=(871.0, 799.8, 0), size=10), Site(poi=[Poi(mediums=[1], name='cpsite3', loc=(179.3, -467.0, 1), typepoi='survey'), Poi(mediums=[-1], name='pp5', loc=(164.7, -464.4, -3), typepoi='sample'), Poi(mediums=[-1], name='pp6', loc=(184.7, -477.2, -3), typepoi='sample'), Poi(mediums=[-1], name='pp7', loc=(187.5, -468.7, -3), typepoi='sample'), Poi(mediums=[-1, 1], name='sp6', loc=(168.5, -457.8, 0), typepoi='transition'), Poi(mediums=[-1, 1], name='sp7', loc=(171.3, -455.9, 0), typepoi='transition'), Poi(mediums=[-1, 1], name='sp8', loc=(186.1, -459.9, 0), typepoi='transition'), Poi(mediums=[-1, 1], name='sp9', loc=(176.2, -473.7, 0), typepoi='transition')], robots=[], name='site3', center=(179.3, -467.0, 0), size=30), Site(poi=[Poi(mediums=[1], name='cpsite4', loc=(203.4, 191.2, 0), typepoi='survey'), Poi(mediums=[-1], name='pp8', loc=(198.7, 195.9, -1), typepoi='sample'), Poi(mediums=[-1, 1], name='sp10', loc=(206.1, 191.9, 0), typepoi='transition')], robots=[], name='site4', center=(203.4, 191.2, 0), size=10), Site(poi=[Poi(mediums=[1], name='cpsite5', loc=(639.4, -878.6, 1), typepoi='survey'), Poi(mediums=[-1], name='pp9', loc=(652.7, -865.8, -4), typepoi='sample'), Poi(mediums=[-1], name='pp10', loc=(651.2, -877.0, -4), typepoi='sample'), Poi(mediums=[-1], name='pp11', loc=(652.0, -894.0, -4), typepoi='sample'), Poi(mediums=[-1], name='pp12', loc=(640.4, -859.7, -4), typepoi='sample'), Poi(mediums=[-1, 1], name='sp11', loc=(621.9, -862.6, 0), typepoi='transition'), Poi(mediums=[-1, 1], name='sp12', loc=(650.5, -864.0, 0), typepoi='transition'), Poi(mediums=[-1, 1], name='sp13', loc=(644.6, -889.2, 0), typepoi='transition'), Poi(mediums=[-1, 1], name='sp14', loc=(658.3, -882.2, 0), typepoi='transition'), Poi(mediums=[-1, 1], name='sp15', loc=(621.2, -867.5, 0), typepoi='transition')], robots=[], name='site5', center=(639.4, -878.6, 0), size=40), Site(poi=[Poi(mediums=[1], name='cpsite6', loc=(-183.3, 750.6, 1), typepoi='survey'), Poi(mediums=[-1], name='pp13', loc=(-185.8, 755.6, -1), typepoi='sample'), Poi(mediums=[-1, 1], name='sp16', loc=(-187.7, 750.8, 0), typepoi='transition')], robots=[], name='site6', center=(-183.3, 750.6, 0), size=10), Site(poi=[Poi(mediums=[1], name='cpsite7', loc=(412.1, 485.7, 1), typepoi='survey'), Poi(mediums=[-1], name='pp14', loc=(416.5, 484.3, -3), typepoi='sample'), Poi(mediums=[-1], name='pp15', loc=(403.7, 489.3, -3), typepoi='sample'), Poi(mediums=[-1], name='pp16', loc=(417.7, 494.8, -3), typepoi='sample'), Poi(mediums=[-1, 1], name='sp17', loc=(421.5, 487.1, 0), typepoi='transition'), Poi(mediums=[-1, 1], name='sp18', loc=(402.7, 484.5, 0), typepoi='transition'), Poi(mediums=[-1, 1], name='sp19', loc=(414.0, 478.5, 0), typepoi='transition'), Poi(mediums=[-1, 1], name='sp20', loc=(417.7, 479.1, 0), typepoi='transition')], robots=[], name='site7', center=(412.1, 485.7, 0), size=30)], robots=[Robot(name='robot0', loc=(-108.0, -134.5, 0), medium=0, histo=[], currentpathcost=0, poi='cpbase', site='base', energy=10000), Robot(name='robot1', loc=(-108.0, -134.5, 0), medium=0, histo=[], currentpathcost=0, poi='cpbase', site='base', energy=10000), Robot(name='robot2', loc=(-108.0, -134.5, 0), medium=0, histo=[], currentpathcost=0, poi='cpbase', site='base', energy=10000), Robot(name='robot3', loc=(-108.0, -134.5, 0), medium=0, histo=[], currentpathcost=0, poi='cpbase', site='base', energy=10000), Robot(name='robot4', loc=(-108.0, -134.5, 0), medium=0, histo=[], currentpathcost=0, poi='cpbase', site='base', energy=10000), Robot(name='robot5', loc=(-108.0, -134.5, 0), medium=0, histo=[], currentpathcost=0, poi='cpbase', site='base', energy=10000), Robot(name='robot6', loc=(-108.0, -134.5, 0), medium=0, histo=[], currentpathcost=0, poi='cpbase', site='base', energy=10000)], objective='assess', arenasize=1000, sitesize=(10, 50))
-
-def find_sequential_links(paths, mission):
-    """
-    Identifies sequential dependencies between paths based on robot movement order.
-
-    Returns:
-        - A list of (path_x, path_y) tuples indicating that path_x must finish before path_y.
-    """
-    sequential_links = []
-    path_dependencies = defaultdict(set)
-
-    # Create a mapping of robots to their mission sequence order
-    robot_order = {r.name: r.histo for r in mission.robots}
-
-    # Map robots to paths they appear in
-    robot_to_paths = defaultdict(list)
-    for i, path_info in enumerate(paths):
-        for robot in path_info["robots"]:
-            robot_to_paths[robot].append(i)  # Store path index for each robot
-
-    # print("Robot-to-Path Mapping:", robot_to_paths)
-
-    # Identify sequential dependencies
-    for robot, robot_paths in robot_to_paths.items():
-        # Sort paths based on the robot's **actual mission order**
-        ordered_paths = sorted(robot_paths, key=lambda p: robot_order[robot].index(paths[p]["path"][0]))
-
-        # Establish sequential dependencies
-        for j in range(len(ordered_paths) - 1):
-            prev_path = ordered_paths[j]
-            next_path = ordered_paths[j + 1]
-
-            # Ensure dependencies go from **earlier to later in mission sequence**
-            if next_path not in path_dependencies[prev_path]:  # Prevent duplicate dependencies
-                path_dependencies[prev_path].add(next_path)
-                sequential_links.append((prev_path, next_path))
-
-    return sequential_links
-
-def split_redundant_paths(unique_paths_with_robots, mission):
-    new_paths = []
-    for path_info in unique_paths_with_robots:
-        split_path = []
-        for site_name in path_info["path"]:
-            site = next((s for s in mission.sites if s.name == site_name), None)
-
-            # Check if the robots assigned to the site differ from the current path robots
-            site_robots = {r.name for r in site.robots}
-            path_robots = set(path_info["robots"])
-
-            # if len(path_robots) == 1 and :
-            #     new_paths.append({'path': [site_name], 'robots': list(path_robots)})
-            
-            if site_robots != path_robots:
-                # If the site robots are different, split it into a new path
-                if {'path': [site_name], 'robots': list(site_robots)} not in new_paths:
-                    new_paths.append({'path': [site_name], 'robots': list(site_robots)})
-
-            else:
-                split_path.append(site_name)
-
-        # Add the original path if not empty after filtering
-        if split_path and {'path': split_path, 'robots': path_info["robots"]} not in new_paths:
-            new_paths.append({'path': split_path, 'robots': path_info["robots"]})
-
-    return new_paths
-
-def extract_execution_time(plan_file):
-    """ Extracts total execution time from the generated PDDL plan. """
-    execution_time = 0
-    with open(plan_file, 'r') as file:
-        for line in file:
-            if "; Time" in line:
-                execution_time = float(line.split(":")[-1].strip())  # Extract numerical time value
-    return execution_time
-
-def update_STN_temporal_links(STN, executed_path, execution_time):
-    """ Updates the STN by setting execution time constraints to dependent paths. """
-
-    if executed_path in STN.nodes:
-        # Update the executed node's latest_finish time
-        STN.nodes[executed_path]["latest_finish"] = execution_time
-
-        for successor in list(STN.successors(executed_path)):
-            # Ensure successor's earliest start is at least the execution_time
-            STN.nodes[successor]["earliest_start"] = max(
-                STN.nodes[successor]["earliest_start"],
-                execution_time
-            )
-
-            # **Fix missing edge times for sync paths**
-            if (executed_path, successor) in STN.edges:
-                time_gap = execution_time - STN.nodes[executed_path]["earliest_start"]
-                STN.edges[executed_path, successor]["min_time_gap"] = max(0, time_gap)
-
-            # Ensure successor's latest finish is correctly propagated
-            STN.nodes[successor]["latest_finish"] = max(
-                STN.nodes[successor]["latest_finish"],
-                execution_time
-            )
-
-def get_executable_paths(STN):
-    executable_paths = []
-    for node in STN.nodes:
-        
-        if node in ["Start", "End"]:
-            continue  # Skip start/end nodes
-        
-
-        # Check if all predecessors are executed
-        predecessors = list(STN.predecessors(node))
-        if all(STN.nodes[p]["executed"]== True for p in predecessors) and (STN.nodes[node]["executed"] == False):
-            print
-            executable_paths.append(node)
-
-    return executable_paths
-# bfs_layout
-
-def draw_STN(STN):
-    """
-    Draws the STN graph properly formatted:
-    - Nodes are labeled with sites, not path indices.
-    - "Start" is on the left, "End" on the right.
-    - Execution constraints (`earliest_start`, `latest_finish`) are shown on nodes.
-    - Edges show `min_time_gap` correctly.
-    """
-
-    # **Force Graphviz Layout Using the graphviz Module**
-    dot = graphviz.Digraph(format='png')  # Create a Graphviz Digraph
-
-    # **Fix Node Labels: Show site names instead of Path X**
-    labels = {}
-    for node in STN.nodes:
-        if node == "Start":
-            labels[node] = "Start"
-        elif node == "End":
-            labels[node] = "End"
-        else:
-            site_names = ", ".join(STN.nodes[node].get("sites", []))  # Get site names
-            robot_names = ", ".join(STN.nodes[node].get("robots", []))
-            earliest = STN.nodes[node].get("earliest_start", 0)
-            latest = STN.nodes[node].get("latest_finish", 0)
-            labels[node] = f"Path {node}\n[{site_names}]\n[{robot_names}]"  # Proper formatting
-
-        # Add nodes to Graphviz with labels
-        dot.node(str(node), labels[node], shape="ellipse", style="filled", fillcolor="lightblue")
-
-    # **Fix Edge Labels: Show min_time_gap**
-    for u, v in STN.edges:
-        time_gap = STN.edges[u, v].get("min_time_gap", "0")
-        time_gap = round(time_gap,2)
-        dot.edge(str(u), str(v), label=f"{time_gap}s", color="red")
-
-    # **Render and Display the Graph**
-    dot.render('/tmp/stn_graph')  # Save to a temporary location
-    plt.figure(figsize=(20, 10))
-    img = plt.imread('/tmp/stn_graph.png')  # Load the rendered image
-    plt.imshow(img)
-    plt.axis('off')  # Hide axis for clean visualization
-    plt.title("Structured Simple Temporal Network (STN)")
-    plt.show()
-
-
-def build_STN(paths, sequential_links):
-    """
-    Constructs a Simple Temporal Network (STN) from paths and sequential dependencies.
-    - Adds a "Start" node linking to all paths with no predecessors.
-    - Adds an "End" node linked from all paths with no successors.
-    """
-
-    STN = nx.DiGraph()  # Directed graph for STN
-
-    # Add paths as nodes
-    for i, path_info in enumerate(paths):
-        STN.add_node(i, 
-                     path_id=i, 
-                     sites=path_info["path"], 
-                     robots=path_info["robots"],
-                     earliest_start=0, 
-                     latest_finish=float('inf'),
-                     executed=False)
-
-    # Add edges (dependencies between paths)
-    for prev_path, next_path in sequential_links:
-        STN.add_edge(prev_path, next_path, min_time_gap=0)
-
-    # Identify Start and End Paths
-    initial_paths = {i for i in range(len(paths))} - {link[1] for link in sequential_links}
-    final_paths = {i for i in range(len(paths))} - {link[0] for link in sequential_links}
-
-    # Add Start Node
-    STN.add_node("Start", earliest_start=0, latest_finish=0, executed=True)
-    for init_path in initial_paths:
-        STN.add_edge("Start", init_path, min_time_gap=0)
-
-    # Add End Node
-    STN.add_node("End", earliest_start=float('inf'), latest_finish=float('inf'))
-    for final_path in final_paths:
-        STN.add_edge(final_path, "End", min_time_gap=0)
-
-    return STN
-
+print("Robot assignement:")
+for r in mission.robots:
+    print(r.name, "assigned to", r.histo)

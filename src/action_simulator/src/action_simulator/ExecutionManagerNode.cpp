@@ -382,7 +382,7 @@ void ExecutionManagerNode::ExecutionSequenceFunction()
     problem_client_ = std::make_shared<plansys2::ProblemExpertClient>();
 
     // Load the problem from a .pddl file
-    std::ifstream problem_file("src/my_examples/plansys2_testexample/pddl/problem_hightest.pddl");
+    std::ifstream problem_file("src/my_examples/plansys2_testexample/pddl/problem_7r7s_iros.pddl");
     if (!problem_file.is_open()) {
         RCLCPP_ERROR(this->get_logger(), "Failed to open problem file.");
         throw std::runtime_error("Problem file load failed");

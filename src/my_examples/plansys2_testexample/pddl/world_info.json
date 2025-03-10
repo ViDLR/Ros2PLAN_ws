@@ -3,8 +3,8 @@
         {
             "id": "cpbase",
             "coordinates": [
-                -469.2,
-                -197.9,
+                -108.0,
+                -134.5,
                 0
             ],
             "type": "transition"
@@ -12,8 +12,8 @@
         {
             "id": "cpsite1",
             "coordinates": [
-                -398.3,
-                -73.0,
+                58.0,
+                361.5,
                 1
             ],
             "type": "survey"
@@ -21,44 +21,35 @@
         {
             "id": "pp1",
             "coordinates": [
-                -415.3,
-                -58.1,
-                -4
+                71.9,
+                375.9,
+                -3
             ],
             "type": "sample"
         },
         {
             "id": "pp2",
             "coordinates": [
-                -406.8,
-                -77.4,
-                -4
+                59.9,
+                363.5,
+                -3
             ],
             "type": "sample"
         },
         {
             "id": "pp3",
             "coordinates": [
-                -401.4,
-                -60.4,
-                -4
-            ],
-            "type": "sample"
-        },
-        {
-            "id": "pp4",
-            "coordinates": [
-                -415.6,
-                -62.2,
-                -4
+                66.8,
+                348.6,
+                -3
             ],
             "type": "sample"
         },
         {
             "id": "sp1",
             "coordinates": [
-                -416.2,
-                -90.3,
+                64.1,
+                359.9,
                 0
             ],
             "type": "transition"
@@ -66,8 +57,8 @@
         {
             "id": "sp2",
             "coordinates": [
-                -413.2,
-                -87.0,
+                60.0,
+                371.1,
                 0
             ],
             "type": "transition"
@@ -75,8 +66,8 @@
         {
             "id": "sp3",
             "coordinates": [
-                -381.0,
-                -71.6,
+                71.9,
+                375.8,
                 0
             ],
             "type": "transition"
@@ -84,17 +75,8 @@
         {
             "id": "sp4",
             "coordinates": [
-                -415.6,
-                -83.8,
-                0
-            ],
-            "type": "transition"
-        },
-        {
-            "id": "sp5",
-            "coordinates": [
-                -383.7,
-                -84.8,
+                43.0,
+                373.1,
                 0
             ],
             "type": "transition"
@@ -102,71 +84,26 @@
         {
             "id": "cpsite2",
             "coordinates": [
-                -225.7,
-                450.5,
+                871.0,
+                799.8,
                 1
             ],
             "type": "survey"
         },
         {
-            "id": "pp5",
+            "id": "pp4",
             "coordinates": [
-                -220.8,
-                464.5,
-                -3
+                867.2,
+                794.9,
+                -1
             ],
             "type": "sample"
         },
         {
-            "id": "pp6",
+            "id": "sp5",
             "coordinates": [
-                -213.7,
-                463.9,
-                -3
-            ],
-            "type": "sample"
-        },
-        {
-            "id": "pp7",
-            "coordinates": [
-                -228.0,
-                442.0,
-                -3
-            ],
-            "type": "sample"
-        },
-        {
-            "id": "sp6",
-            "coordinates": [
-                -231.1,
-                443.0,
-                0
-            ],
-            "type": "transition"
-        },
-        {
-            "id": "sp7",
-            "coordinates": [
-                -236.0,
-                440.5,
-                0
-            ],
-            "type": "transition"
-        },
-        {
-            "id": "sp8",
-            "coordinates": [
-                -229.0,
-                436.5,
-                0
-            ],
-            "type": "transition"
-        },
-        {
-            "id": "sp9",
-            "coordinates": [
-                -215.4,
-                442.9,
+                872.1,
+                804.5,
                 0
             ],
             "type": "transition"
@@ -174,89 +111,71 @@
         {
             "id": "cpsite3",
             "coordinates": [
-                -78.4,
-                412.1,
+                179.3,
+                -467.0,
                 1
             ],
             "type": "survey"
         },
         {
-            "id": "pp8",
+            "id": "pp5",
             "coordinates": [
-                -61.9,
-                403.5,
-                -4
+                164.7,
+                -464.4,
+                -3
             ],
             "type": "sample"
         },
         {
-            "id": "pp9",
+            "id": "pp6",
             "coordinates": [
-                -84.1,
-                413.1,
-                -4
+                184.7,
+                -477.2,
+                -3
             ],
             "type": "sample"
         },
         {
-            "id": "pp10",
+            "id": "pp7",
             "coordinates": [
-                -72.7,
-                422.5,
-                -4
+                187.5,
+                -468.7,
+                -3
             ],
             "type": "sample"
         },
         {
-            "id": "pp11",
+            "id": "sp6",
             "coordinates": [
-                -83.6,
-                395.0,
-                -4
-            ],
-            "type": "sample"
-        },
-        {
-            "id": "sp10",
-            "coordinates": [
-                -66.9,
-                420.4,
+                168.5,
+                -457.8,
                 0
             ],
             "type": "transition"
         },
         {
-            "id": "sp11",
+            "id": "sp7",
             "coordinates": [
-                -81.6,
-                420.2,
+                171.3,
+                -455.9,
                 0
             ],
             "type": "transition"
         },
         {
-            "id": "sp12",
+            "id": "sp8",
             "coordinates": [
-                -62.5,
-                413.9,
+                186.1,
+                -459.9,
                 0
             ],
             "type": "transition"
         },
         {
-            "id": "sp13",
+            "id": "sp9",
             "coordinates": [
-                -94.2,
-                395.2,
-                0
-            ],
-            "type": "transition"
-        },
-        {
-            "id": "sp14",
-            "coordinates": [
-                -73.4,
-                402.1,
+                176.2,
+                -473.7,
                 0
             ],
             "type": "transition"
@@ -264,71 +183,26 @@
         {
             "id": "cpsite4",
             "coordinates": [
-                -311.5,
-                277.3,
-                1
+                203.4,
+                191.2,
+                0
             ],
             "type": "survey"
         },
         {
-            "id": "pp12",
+            "id": "pp8",
             "coordinates": [
-                -317.3,
-                283.7,
-                -3
+                198.7,
+                195.9,
+                -1
             ],
             "type": "sample"
         },
         {
-            "id": "pp13",
+            "id": "sp10",
             "coordinates": [
-                -314.6,
-                292.0,
-                -3
-            ],
-            "type": "sample"
-        },
-        {
-            "id": "pp14",
-            "coordinates": [
-                -315.6,
-                289.3,
-                -3
-            ],
-            "type": "sample"
-        },
-        {
-            "id": "sp15",
-            "coordinates": [
-                -319.5,
-                285.5,
-                0
-            ],
-            "type": "transition"
-        },
-        {
-            "id": "sp16",
-            "coordinates": [
-                -314.2,
-                266.4,
-                0
-            ],
-            "type": "transition"
-        },
-        {
-            "id": "sp17",
-            "coordinates": [
-                -318.4,
-                281.1,
-                0
-            ],
-            "type": "transition"
-        },
-        {
-            "id": "sp18",
-            "coordinates": [
-                -320.0,
-                266.3,
+                206.1,
+                191.9,
                 0
             ],
             "type": "transition"
@@ -336,44 +210,89 @@
         {
             "id": "cpsite5",
             "coordinates": [
-                -310.5,
-                -120.8,
+                639.4,
+                -878.6,
                 1
             ],
             "type": "survey"
         },
         {
-            "id": "pp15",
+            "id": "pp9",
             "coordinates": [
-                -318.0,
-                -127.4,
-                -2
+                652.7,
+                -865.8,
+                -4
             ],
             "type": "sample"
         },
         {
-            "id": "pp16",
+            "id": "pp10",
             "coordinates": [
-                -305.4,
-                -128.9,
-                -2
+                651.2,
+                -877.0,
+                -4
             ],
             "type": "sample"
         },
         {
-            "id": "sp19",
+            "id": "pp11",
             "coordinates": [
-                -316.6,
-                -121.5,
+                652.0,
+                -894.0,
+                -4
+            ],
+            "type": "sample"
+        },
+        {
+            "id": "pp12",
+            "coordinates": [
+                640.4,
+                -859.7,
+                -4
+            ],
+            "type": "sample"
+        },
+        {
+            "id": "sp11",
+            "coordinates": [
+                621.9,
+                -862.6,
                 0
             ],
             "type": "transition"
         },
         {
-            "id": "sp20",
+            "id": "sp12",
             "coordinates": [
-                -308.8,
-                -127.6,
+                650.5,
+                -864.0,
+                0
+            ],
+            "type": "transition"
+        },
+        {
+            "id": "sp13",
+            "coordinates": [
+                644.6,
+                -889.2,
+                0
+            ],
+            "type": "transition"
+        },
+        {
+            "id": "sp14",
+            "coordinates": [
+                658.3,
+                -882.2,
+                0
+            ],
+            "type": "transition"
+        },
+        {
+            "id": "sp15",
+            "coordinates": [
+                621.2,
+                -867.5,
                 0
             ],
             "type": "transition"
@@ -381,44 +300,26 @@
         {
             "id": "cpsite6",
             "coordinates": [
-                30.8,
-                138.1,
+                -183.3,
+                750.6,
                 1
             ],
             "type": "survey"
         },
         {
-            "id": "pp17",
+            "id": "pp13",
             "coordinates": [
-                32.1,
-                143.2,
-                -2
+                -185.8,
+                755.6,
+                -1
             ],
             "type": "sample"
         },
         {
-            "id": "pp18",
+            "id": "sp16",
             "coordinates": [
-                28.8,
-                133.9,
-                -2
-            ],
-            "type": "sample"
-        },
-        {
-            "id": "sp21",
-            "coordinates": [
-                26.5,
-                130.0,
-                0
-            ],
-            "type": "transition"
-        },
-        {
-            "id": "sp22",
-            "coordinates": [
-                37.1,
-                137.5,
+                -187.7,
+                750.8,
                 0
             ],
             "type": "transition"
@@ -426,116 +327,71 @@
         {
             "id": "cpsite7",
             "coordinates": [
-                -275.3,
-                -211.1,
+                412.1,
+                485.7,
                 1
             ],
             "type": "survey"
         },
         {
-            "id": "pp19",
+            "id": "pp14",
             "coordinates": [
-                -275.7,
-                -220.4,
-                -2
+                416.5,
+                484.3,
+                -3
             ],
             "type": "sample"
         },
         {
-            "id": "pp20",
+            "id": "pp15",
             "coordinates": [
-                -267.1,
-                -217.8,
-                -2
+                403.7,
+                489.3,
+                -3
             ],
             "type": "sample"
         },
         {
-            "id": "sp23",
+            "id": "pp16",
             "coordinates": [
-                -279.3,
-                -214.0,
+                417.7,
+                494.8,
+                -3
+            ],
+            "type": "sample"
+        },
+        {
+            "id": "sp17",
+            "coordinates": [
+                421.5,
+                487.1,
                 0
             ],
             "type": "transition"
         },
         {
-            "id": "sp24",
+            "id": "sp18",
             "coordinates": [
-                -282.6,
-                -208.3,
+                402.7,
+                484.5,
                 0
             ],
             "type": "transition"
         },
         {
-            "id": "cpsite8",
+            "id": "sp19",
             "coordinates": [
-                -210.3,
-                -244.5,
-                1
-            ],
-            "type": "survey"
-        },
-        {
-            "id": "pp21",
-            "coordinates": [
-                -208.9,
-                -245.1,
-                -2
-            ],
-            "type": "sample"
-        },
-        {
-            "id": "pp22",
-            "coordinates": [
-                -208.8,
-                -246.6,
-                -2
-            ],
-            "type": "sample"
-        },
-        {
-            "id": "sp25",
-            "coordinates": [
-                -220.1,
-                -250.0,
+                414.0,
+                478.5,
                 0
             ],
             "type": "transition"
         },
         {
-            "id": "sp26",
+            "id": "sp20",
             "coordinates": [
-                -218.8,
-                -251.4,
-                0
-            ],
-            "type": "transition"
-        },
-        {
-            "id": "cpsite9",
-            "coordinates": [
-                189.3,
-                407.6,
-                1
-            ],
-            "type": "survey"
-        },
-        {
-            "id": "pp23",
-            "coordinates": [
-                189.2,
-                402.8,
-                -1
-            ],
-            "type": "sample"
-        },
-        {
-            "id": "sp27",
-            "coordinates": [
-                193.1,
-                408.7,
+                417.7,
+                479.1,
                 0
             ],
             "type": "transition"
@@ -556,19 +412,26 @@
                 "pp1",
                 "pp2",
                 "pp3",
-                "pp4",
                 "sp1",
                 "sp2",
                 "sp3",
-                "sp4",
-                "sp5"
+                "sp4"
             ],
-            "size": 40
+            "size": 30
         },
         {
             "id": "site2",
             "points": [
                 "cpsite2",
+                "pp4",
+                "sp5"
+            ],
+            "size": 10
+        },
+        {
+            "id": "site3",
+            "points": [
+                "cpsite3",
                 "pp5",
                 "pp6",
                 "pp7",
@@ -580,95 +443,60 @@
             "size": 30
         },
         {
-            "id": "site3",
-            "points": [
-                "cpsite3",
-                "pp8",
-                "pp9",
-                "pp10",
-                "pp11",
-                "sp10",
-                "sp11",
-                "sp12",
-                "sp13",
-                "sp14"
-            ],
-            "size": 40
-        },
-        {
             "id": "site4",
             "points": [
                 "cpsite4",
-                "pp12",
-                "pp13",
-                "pp14",
-                "sp15",
-                "sp16",
-                "sp17",
-                "sp18"
+                "pp8",
+                "sp10"
             ],
-            "size": 30
+            "size": 10
         },
         {
             "id": "site5",
             "points": [
                 "cpsite5",
-                "pp15",
-                "pp16",
-                "sp19",
-                "sp20"
+                "pp9",
+                "pp10",
+                "pp11",
+                "pp12",
+                "sp11",
+                "sp12",
+                "sp13",
+                "sp14",
+                "sp15"
             ],
-            "size": 20
+            "size": 40
         },
         {
             "id": "site6",
             "points": [
                 "cpsite6",
-                "pp17",
-                "pp18",
-                "sp21",
-                "sp22"
+                "pp13",
+                "sp16"
             ],
-            "size": 20
+            "size": 10
         },
         {
             "id": "site7",
             "points": [
                 "cpsite7",
-                "pp19",
-                "pp20",
-                "sp23",
-                "sp24"
+                "pp14",
+                "pp15",
+                "pp16",
+                "sp17",
+                "sp18",
+                "sp19",
+                "sp20"
             ],
-            "size": 20
-        },
-        {
-            "id": "site8",
-            "points": [
-                "cpsite8",
-                "pp21",
-                "pp22",
-                "sp25",
-                "sp26"
-            ],
-            "size": 20
-        },
-        {
-            "id": "site9",
-            "points": [
-                "cpsite9",
-                "pp23",
-                "sp27"
-            ],
-            "size": 10
+            "size": 30
         }
     ],
     "robots": [
         {
             "name": "robot0",
             "loc": [
-                -469.2,
-                -197.9,
+                -108.0,
+                -134.5,
                 0
             ],
             "medium": 0,
@@ -681,8 +509,8 @@
         {
             "name": "robot1",
             "loc": [
-                -469.2,
-                -197.9,
+                -108.0,
+                -134.5,
                 0
             ],
             "medium": 0,
@@ -695,8 +523,8 @@
         {
             "name": "robot2",
             "loc": [
-                -469.2,
-                -197.9,
+                -108.0,
+                -134.5,
                 0
             ],
             "medium": 0,
@@ -709,8 +537,8 @@
         {
             "name": "robot3",
             "loc": [
-                -469.2,
-                -197.9,
+                -108.0,
+                -134.5,
                 0
             ],
             "medium": 0,
@@ -723,8 +551,8 @@
         {
             "name": "robot4",
             "loc": [
-                -469.2,
-                -197.9,
+                -108.0,
+                -134.5,
                 0
             ],
             "medium": 0,
@@ -737,8 +565,8 @@
         {
             "name": "robot5",
             "loc": [
-                -469.2,
-                -197.9,
+                -108.0,
+                -134.5,
                 0
             ],
             "medium": 0,
@@ -751,50 +579,8 @@
         {
             "name": "robot6",
             "loc": [
-                -469.2,
-                -197.9,
-                0
-            ],
-            "medium": 0,
-            "histo": [],
-            "currentpathcost": 0,
-            "poi": "cpbase",
-            "site": "base",
-            "energy": 10000
-        },
-        {
-            "name": "robot7",
-            "loc": [
-                -469.2,
-                -197.9,
-                0
-            ],
-            "medium": 0,
-            "histo": [],
-            "currentpathcost": 0,
-            "poi": "cpbase",
-            "site": "base",
-            "energy": 10000
-        },
-        {
-            "name": "robot8",
-            "loc": [
-                -469.2,
-                -197.9,
-                0
-            ],
-            "medium": 0,
-            "histo": [],
-            "currentpathcost": 0,
-            "poi": "cpbase",
-            "site": "base",
-            "energy": 10000
-        },
-        {
-            "name": "robot9",
-            "loc": [
-                -469.2,
-                -197.9,
+                -108.0,
+                -134.5,
                 0
             ],
             "medium": 0,
