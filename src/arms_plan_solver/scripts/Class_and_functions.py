@@ -423,12 +423,49 @@ def Clustersite(poi=[], nb_cluster=int, weightslist=None):
 
     return clusters
 
+
+# def compute_scaling_factors(num_samples, num_transitions, r):
+#     """
+#     Computes k, beta, and gamma dynamically based on site complexity
+#     and robot coalition size.
+#     """
+#     # Site complexity scaling factor
+#     k = 1 + (num_samples / (num_samples + num_transitions + 2))  # Adapts with site difficulty
+    
+#     # Diminishing return factor for additional robots (logarithmic scaling)
+#     beta = 0.9 + 0.2 * np.log(1 + num_samples)  # More tasks → slower diminishing returns
+    
+#     # Relay efficiency factor, increases if many transition points (relay-heavy site)
+#     gamma = 0.85 + 0.15 * (num_transitions / (num_samples + num_transitions + 1))  
+    
+#     return k, beta, gamma
+
+def compute_scaling_factors(num_samples, num_transitions, num_robots):
+    """
+    Compute scaling factors based on mission constraints.
+    
+    - gamma: relay efficiency factor (reduced when more transitions are needed).
+    - beta: parallel execution scaling factor (limits efficiency of adding robots).
+    - k: diminishing returns scaling factor (scales relative to site complexity).
+    """
+    
+    # ✅ Compute relay efficiency (gamma)
+    gamma = 1 - (num_transitions / (num_samples + num_transitions + 1))
+
+    # ✅ Compute parallel execution scaling (beta)
+    beta = num_samples / (num_samples + num_robots)
+
+    # ✅ Compute diminishing returns factor (k)
+    k = num_samples / (num_samples + num_transitions + 1)
+    
+    return k, beta, gamma
+    
 def get_weights_of_sites(sites=[], robots=[], listrused=[]):
     """ 
-    Finalized heuristic for estimating site resolution cost:
-    - Better captures **real-world execution behavior**.
-    - Ensures **parallel execution is correctly modeled**.
-    - Adjusts for **diminishing returns** in a **balanced way**.
+    Heuristic for estimating site resolution cost:
+    - Models real execution behavior.
+    - Ensures parallel execution scaling is balanced.
+    - Adjusts for diminishing returns and navigation impact.
     """
     
     if not listrused:
@@ -441,7 +478,13 @@ def get_weights_of_sites(sites=[], robots=[], listrused=[]):
         cost_of_site = []
         num_samples = sum(1 for p in s.poi if p.typepoi == "sample")  # Number of sampling points
         num_transitions = sum(1 for p in s.poi if p.typepoi == "transition")  # Number of transition points
-        site_factor = 1 + (num_samples / (num_samples + num_transitions + 2))  # 🔥 Balanced site impact
+
+        # 🔥 Compute total site travel distance (for intra-site navigation cost)
+        total_site_distance, sum_site_distances = CostEstimOftour(s.poi)  
+
+        # 🔥 Compute adaptive scaling factors based on site properties
+        k, beta, gamma = compute_scaling_factors(
+            num_samples, num_transitions, len(listrused))
 
         for r in listrused:  # ✅ At least 2 robots required
             maxclust = min(r, len(s.poi) - 1)
@@ -477,14 +520,13 @@ def get_weights_of_sites(sites=[], robots=[], listrused=[]):
 
             # ✅ **Parallel Execution Simulation**
             num_sample_robots = max(1, r - 1)  # At least one sampling robot
-            relay_cost = sum(relay_costs) * 0.9  # 🔥 Relay efficiency factor
-            sample_cost = (sum(sample_costs) / num_sample_robots) * 0.95  # 🔥 Adjusted parallel workload
+            relay_cost = sum(relay_costs) * gamma  # 🔥 Adjusted relay efficiency
+            sample_cost = (sum(sample_costs) / num_sample_robots) * beta  # 🔥 Adjusted parallel workload
 
             estimated_cost = max(relay_cost, sample_cost) + sum(transition_costs)  # 🔥 Ensuring correct execution behavior
 
-            # ✅ **Diminishing Returns with Site Scaling**
-            diminishing_factor = 1 + (0.6 / (r ** 0.95)) * site_factor  # 🔥 Faster convergence for large sites
-            adjusted_cost = estimated_cost / diminishing_factor  
+            # ✅ **Apply Heuristic Scaling**
+            adjusted_cost = estimated_cost * (1 / (1 + k * (r - 2) ** beta)) + (total_site_distance / r)
 
             # ✅ **Ensure Cost Never Increases with More Robots**
             if len(cost_of_site) > 0 and adjusted_cost > cost_of_site[-1]:
@@ -496,6 +538,8 @@ def get_weights_of_sites(sites=[], robots=[], listrused=[]):
         weights_sites_list.append(sum(cost_of_site))
 
     return weights_sites_list, costs_of_all_sites
+
+
 
 
 ######################### GENERATING PDDL SCRIPTS ########################
@@ -688,7 +732,7 @@ def GenerateAdaptedProblem(mission, previous_problem, robot_state, next_site, go
     next_site_obj = [site for site in mission.sites if site.name == next_site]
     next_site = next_site_obj[0]
 
-    print("generate adapted problem",current_sites, "future name : ",f"subp_{'_'.join(sorted(current_sites))}_to_{next_site.name}_{goaltype}")
+    # print("generate adapted problem",current_sites, "future name : ",f"subp_{'_'.join(sorted(current_sites))}_to_{next_site.name}_{goaltype}")
 
     if "pddl" not in previous_problem:
         previous_problem += ".pddl"
@@ -801,7 +845,7 @@ def GenerateAdaptedProblem(mission, previous_problem, robot_state, next_site, go
 
     # Define the new problem file path
     updated_path = os.path.join(output_dir, f"subp_{'_'.join(sorted(current_sites))}_to_{next_site.name}_{goaltype}")
-    print("generate adapted problem" "updated path : ",updated_path)
+    # print("generate adapted problem" "updated path : ",updated_path)
     # Write the updated problem file
     with open(updated_path +".pddl", 'w') as file:
         file.writelines(new_lines)
@@ -1900,9 +1944,9 @@ def generate_possible_paths(optimal_order, num_robots):
     paths = paths[:num_robots]
 
     # Debugging
-    print(f"\n🔹 Generated {len(paths)} paths for {num_robots} robots:")
-    for i, path in enumerate(paths):
-        print(f"  Path {i+1}: {path}")
+    # print(f"\n🔹 Generated {len(paths)} paths for {num_robots} robots:")
+    # for i, path in enumerate(paths):
+    #     print(f"  Path {i+1}: {path}")
 
     return paths
 
@@ -2197,4 +2241,54 @@ def build_STN(paths, sequential_links):
         STN.add_edge(final_path, "End", min_time_gap=0)
 
     return STN
+def extract_paths_with_dependencies(stn):
+    paths = {}  # Dictionary to store paths with assigned robots
+    dependencies = {}  # Dictionary to store path dependencies
+    visited_nodes = set()
+
+    # Identify valid start nodes (excluding "Start" and "End")
+    start_nodes = [n for n in stn.nodes() if "Start" in stn.predecessors(n)]
+
+    for start_node in start_nodes:
+        queue = [start_node]
+
+        while queue:
+            node = queue.pop(0)  # Process nodes in BFS/DFS order
+
+            if node in visited_nodes or node in ["Start", "End"]:
+                continue  # Skip already visited and special nodes
+            visited_nodes.add(node)
+
+            # Retrieve node information
+            node_data = stn.nodes[node]
+            sites = node_data["sites"]
+            robots = node_data["robots"]
+
+            # Store path information
+            paths[node] = {
+                "sites": sites,  # Sites assigned to the path
+                "robots": robots  # Robots assigned to the path
+            }
+
+            # Get predecessors (excluding "Start")
+            pred = [p for p in stn.predecessors(node) if p != "Start"]
+            dependencies[node] = pred if pred else []  # Store predecessors
+
+            # Add successors to queue (excluding "Start" and "End")
+            successors = [s for s in stn.successors(node) if s not in ["Start", "End"]]
+            queue.extend(successors)
+
+    # **Sorting Fix**: Separate numeric and sync paths, then sort them correctly
+    def custom_sort_key(item):
+        key, _ = item
+        if isinstance(key, int):  # Normal integer path indices
+            return (0, key)
+        if key.startswith("sync_"):  # Sync paths (keep their order)
+            return (1, key)
+        return (2, key)  # Fallback for unexpected cases
+
+    # Print paths in required format
+    print("\nUnique paths in plan (with dependencies):")
+    for idx, data in sorted(paths.items(), key=custom_sort_key):
+        print(f"path {idx}: {data['sites']} robots: {data['robots']} | Predecessors: {dependencies[idx]}")
 

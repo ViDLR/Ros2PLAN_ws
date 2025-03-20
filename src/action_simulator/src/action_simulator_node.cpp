@@ -46,8 +46,8 @@ SimulationNode::SimulationNode(const std::string &robot_name, const std::string 
     failure_type_dist_ = std::uniform_int_distribution<>(1, 3);
 
     // Logging for initialization
-    RCLCPP_INFO(this->get_logger(), "SimulationNode created for robot: %s in team: %s",
-                robot_state_.robot_name.c_str(), robot_state_.team.c_str());
+    RCLCPP_INFO(this->get_logger(), "SimulationNode created for robot: %s",
+                robot_state_.robot_name.c_str());
 }
 
 

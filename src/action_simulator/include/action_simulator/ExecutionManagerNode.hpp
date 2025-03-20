@@ -15,6 +15,8 @@
 #include "plansys2_msgs/msg/world_info.hpp"
 #include <fmt/core.h>
 #include <fmt/ranges.h>
+#include <regex>  
+#include <sstream> 
 
 #include <fstream>
 #include <memory>
@@ -28,45 +30,35 @@ class ExecutionManagerNode : public rclcpp::Node
 {
 public:
     ExecutionManagerNode();
+    void ExecutionSequenceFunction(); 
+    ~ExecutionManagerNode();
 
 private:
-    void ExecutionSequenceFunction(); 
+    
     void parseArmsResult(const std::string &file_path, const std::vector<plansys2_msgs::msg::Plan> &plans);
+    std::vector<std::string> splitString(const std::string &input, char delimiter);
+    std::shared_ptr<rclcpp::executors::MultiThreadedExecutor> executor_; // ✅ Declare executor_
+    std::thread spin_thread_; // ✅ Declare spin thread
+
     // void initializeSTN()
     void load_and_save_world_info(const std::string &problem_info_path);
     void publish_world_info(const std::string &file_path);
-    void createExecutorCallback(const std::string &team_name);
-    void removeExecutorCallback(const std::string &team_name);
-    bool hasExecutorCallback(const std::string &team_name) const;
-    void addExecutorCallbacks(const std::vector<plansys2_msgs::msg::Team> &teams);
-
-    void addExecutorClients(const std::vector<plansys2_msgs::msg::Team> &teams);
-    void createExecutorClient(const std::string &team_name);
-    void removeExecutorClient(const std::string &team_name);
-    bool hasExecutorClient(const std::string &team_name) const;
-    void removeExecutorClients(const std::vector<std::string> &team_names);
 
     // STN handling
-    void startPlanExecution();
-    void executionFeedbackCallback(const std::string &team_name, float progress);
+    void executionStatusCallback(const std_msgs::msg::String::SharedPtr msg);
     void handleFailure(const std::string &team_name);
-    void propagateDelay(const std::string& team_name, float delay);
     void validateFailureImpact(const std::string& team_name);
     std::shared_ptr<STNController> stn_controller_;
     
     // void reload_knowledge_and_replan();
+    rclcpp::Subscription<std_msgs::msg::String>::SharedPtr execution_status_sub_;
     rclcpp::Publisher<plansys2_msgs::msg::WorldInfo>::SharedPtr world_info_publisher_;
     std::shared_ptr<plansys2::DomainExpertClient> domain_client_;
     std::shared_ptr<plansys2::ProblemExpertClient> problem_client_;
     std::shared_ptr<plansys2::PlannerClient> planner_client_;
-    std::unordered_map<std::string, rclcpp::Subscription<plansys2_msgs::msg::ActionExecution>::SharedPtr> executor_callbacks_;
-    std::unordered_map<std::string, std::shared_ptr<plansys2::ExecutorClient>> executor_clients_;
     std::vector<plansys2_msgs::msg::Team> active_teams;
     std::map<std::string, plansys2_msgs::msg::Plan> teams_plans;
-
-    
-
-    
+    std::map<std::string, std::vector<std::string>> team_dependencies_;
 
 
 };

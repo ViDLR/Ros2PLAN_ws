@@ -190,7 +190,7 @@ namespace plansys2
         }
         const auto &output_dir = output_dir_maybe.value();
     
-        // Ensure domain and problem files exist
+        // Write domain and problem to temp files
         const auto domain_file_path = "/tmp/domain.pddl";
         const auto problem_file_path = "/tmp/problem.pddl";
     
@@ -203,43 +203,40 @@ namespace plansys2
     
         domain_out << domain;
         problem_out << problem;
-    
         domain_out.close();
         problem_out.close();
     
-        // Validate the domain and problem content before calling the planner
         if (domain.empty() || problem.empty()) {
             RCLCPP_ERROR(lc_node_->get_logger(), "Domain or Problem file is empty! Cannot execute planner.");
             return {};
         }
     
-        // **Handling Full vs Partial Replanning**
+        // Handle Full vs Partial Replanning
         if (mode == "full") {
             RCLCPP_INFO(lc_node_->get_logger(), "Full planning requested, resetting plan output.");
-            // Remove previous planning outputs
             std::filesystem::remove_all(output_dir);
             std::filesystem::create_directories(output_dir);
         }
     
-        // Generate command arguments
+        // Build script command
         std::string script_args = mode;
         for (const auto &path : paths) {
             script_args += " " + path;
         }
     
-        // Execute the Python script
+        // Locate planner script
         const std::string script_path = ament_index_cpp::get_package_share_directory("arms_plan_solver") + "/scripts/solve_problem.py";
         if (!std::filesystem::exists(script_path)) {
             RCLCPP_ERROR(lc_node_->get_logger(), "Script not found at path: %s", script_path.c_str());
             return {};
         }
-        // 2 is the minimum number of cluster considered for arms
+    
+        // Run planner script
         const auto result_file_path = output_dir / "arms_result.txt";
         const std::string command = "python3 " + script_path + " " +
                                     domain_file_path + " " +
                                     problem_file_path + " " +
-                                    "2"+ " " +
-                                    script_args +
+                                    "2 " + script_args + 
                                     " > " + result_file_path.string();
     
         RCLCPP_INFO(lc_node_->get_logger(), "Executing command: %s", command.c_str());
@@ -249,46 +246,132 @@ namespace plansys2
             return {};
         }
     
-        // **Parse results**
+        // **Parse results dynamically**
         std::vector<plansys2_msgs::msg::Plan> plans;
-        for (size_t i = 0; i < paths.size(); i++) {
-            const auto plan_file_path = output_dir / ("mergedplan_" + std::to_string(i) + ".txt");
-            plansys2_msgs::msg::Plan plan;
+        std::map<int, plansys2_msgs::msg::Plan> ordered_plans;
+        std::vector<plansys2_msgs::msg::Plan> sync_plans;
     
-            std::ifstream plan_file(plan_file_path);
-            if (!plan_file.is_open()) {
-                RCLCPP_ERROR(lc_node_->get_logger(), "Failed to open plan result file: %s", plan_file_path.string().c_str());
-                continue;
-            }
+        for (const auto &entry : std::filesystem::directory_iterator(output_dir / "subproblems")) {
+            std::string filename = entry.path().filename().string();
     
-            std::string line;
-            while (std::getline(plan_file, line)) {
-                if (!line.empty() && line.front() != ';') {
-                    plansys2_msgs::msg::PlanItem item;
-                    size_t colon_pos = line.find(":");
-                    size_t paren_pos = line.find(")");
-                    size_t bracket_pos = line.find("[");
+            if (filename.find("_mergedPLAN.txt") != std::string::npos) {
+                plansys2_msgs::msg::Plan plan;
+                std::ifstream plan_file(entry.path());
     
-                    item.time = std::stof(line.substr(0, colon_pos));
-                    item.action = line.substr(colon_pos + 2, paren_pos - colon_pos - 1);
-                    item.duration = std::stof(line.substr(bracket_pos + 1, line.find("]") - bracket_pos - 1));
-    
-                    plan.items.push_back(item);
+                if (!plan_file.is_open()) {
+                    RCLCPP_ERROR(lc_node_->get_logger(), "Failed to open plan result file: %s", entry.path().c_str());
+                    continue;
                 }
-            }
     
-            if (!plan.items.empty()) {
-                plans.push_back(plan);
+                std::string path_name = filename.substr(5, filename.find("_mergedPLAN.txt") - 5); // Extract path ID
+                bool is_sync_path = path_name.find("sync") != std::string::npos;
+                int path_index = is_sync_path ? -1 : std::stoi(path_name);
+    
+                std::string line;
+                while (std::getline(plan_file, line)) {
+                    if (!line.empty() && line.front() != ';') { // Ignore comments
+                        plansys2_msgs::msg::PlanItem item;
+    
+                        size_t colon_pos = line.find(":");
+                        size_t open_paren_pos = line.find("(");
+                        size_t close_paren_pos = line.rfind(")"); // Find last closing parenthesis
+                        size_t bracket_pos = line.find("[");
+    
+                        if (colon_pos == std::string::npos || open_paren_pos == std::string::npos ||
+                            close_paren_pos == std::string::npos || bracket_pos == std::string::npos) {
+                            RCLCPP_ERROR(lc_node_->get_logger(), "Malformed plan line: %s", line.c_str());
+                            continue;
+                        }
+    
+                        try {
+                            item.time = std::stof(line.substr(0, colon_pos));
+                            item.action = line.substr(open_paren_pos, close_paren_pos - open_paren_pos + 1);  // ✅ Extract full action
+                            item.duration = std::stof(line.substr(bracket_pos + 1, line.find("]") - bracket_pos - 1));
+    
+                            plan.items.push_back(item);
+                        } catch (const std::exception &e) {
+                            RCLCPP_ERROR(lc_node_->get_logger(), "Error parsing line: %s, Exception: %s", line.c_str(), e.what());
+                        }
+                    }
+                }
+    
+                if (!plan.items.empty()) {
+                    if (is_sync_path) {
+                        sync_plans.push_back(plan);
+                    } else {
+                        ordered_plans[path_index] = plan;
+                    }
+                }
             }
         }
     
+        // **Sort Plans by Order**
+        for (auto &pair : ordered_plans) {
+            plans.push_back(pair.second);
+        }
+    
+        // **Add Sync Plans at the End**
+        plans.insert(plans.end(), sync_plans.begin(), sync_plans.end());
+    
         if (plans.empty()) {
             RCLCPP_ERROR(lc_node_->get_logger(), "No valid plans found.");
+        } else {
+            RCLCPP_INFO(lc_node_->get_logger(), "Successfully parsed %lu path plans in order.", plans.size());
         }
     
         return plans;
     }
     
+
+    
+// // **Parse results dynamically**
+// std::vector<plansys2_msgs::msg::Plan> plans;
+// std::vector<std::string> found_paths;
+
+// for (const auto &entry : std::filesystem::directory_iterator(output_dir / "subproblems")) {
+//     std::string filename = entry.path().filename().string();
+
+//     if (filename.find("PATH_") != std::string::npos && filename.find("_mergedPLAN.txt") != std::string::npos) {
+//         plansys2_msgs::msg::Plan plan;
+//         std::ifstream plan_file(entry.path());
+
+//         if (!plan_file.is_open()) {
+//             RCLCPP_ERROR(lc_node_->get_logger(), "Failed to open plan result file: %s", entry.path().c_str());
+//             continue;
+//         }
+
+//         std::string line;
+//         while (std::getline(plan_file, line)) {
+//             if (!line.empty() && line.front() != ';') {
+//                 plansys2_msgs::msg::PlanItem item;
+//                 size_t colon_pos = line.find(":");
+//                 size_t paren_pos = line.find(")");
+//                 size_t bracket_pos = line.find("[");
+
+//                 item.time = std::stof(line.substr(0, colon_pos));
+//                 item.action = line.substr(colon_pos + 2, paren_pos - colon_pos - 1);
+//                 item.duration = std::stof(line.substr(bracket_pos + 1, line.find("]") - bracket_pos - 1));
+
+//                 plan.items.push_back(item);
+//             }
+//         }
+
+//         if (!plan.items.empty()) {
+//             plans.push_back(plan);
+//             found_paths.push_back(filename);
+//         }
+//     }
+// }
+
+// if (plans.empty()) {
+//     RCLCPP_ERROR(lc_node_->get_logger(), "No valid plans found.");
+// } else {
+//     RCLCPP_INFO(lc_node_->get_logger(), "Successfully parsed %lu path plans: [%s]", 
+//                 plans.size(), fmt::format("{}", fmt::join(found_paths, ", ")).c_str());
+// }
+
+// return plans;
+// }
 
     bool
     ARMSPlanSolver::isDomainValid(

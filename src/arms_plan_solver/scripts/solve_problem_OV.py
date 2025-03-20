@@ -77,9 +77,9 @@ def main():
     # We split redundant paths into severals
     new_unique_paths = Class_and_functions.split_redundant_paths(unique_paths_with_robots, mission)
 
-    # print("Unique paths in plan:")
-    # for i, path_info in enumerate(new_unique_paths):
-    #     print("path {}: ".format(i),path_info['path'], "robots: ",path_info['robots'])
+    print("Unique paths in plan:")
+    for i, path_info in enumerate(new_unique_paths):
+        print("path {}: ".format(i),path_info['path'], "robots: ",path_info['robots'])
 
     t_alloc_full_0 = time.perf_counter()
     # Following the robots assignements in the unique paths we can find the sequential links between paths
@@ -97,6 +97,10 @@ def main():
 
     while not all(stn.nodes[p]["executed"] for p in stn.nodes if p not in ["Start", "End"]):  # Excluding "Start" and "End" nodes
         executable_paths = Class_and_functions.get_executable_paths(stn)
+        # print("🔹 Executable paths:", executable_paths)
+        # print([n for n in stn.nodes()])
+        # print([list(stn.predecessors(n)) for n in stn.nodes()])
+        # print([list(stn.successors(n)) for n in stn.nodes()])
 
         for path_idx in executable_paths:
             sync_created = False
@@ -255,6 +259,6 @@ def main():
     # Class_and_functions.draw_STN(stn)
     t_alloc_full_1 = time.perf_counter()
     Class_and_functions.extract_paths_with_dependencies(stn)
-    # print(t_alloc_full_1-t_alloc_full_0)
+    print(t_alloc_full_1-t_alloc_full_0)
 if __name__ == '__main__':
     main()

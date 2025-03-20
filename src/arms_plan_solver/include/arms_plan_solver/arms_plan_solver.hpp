@@ -19,6 +19,8 @@
 #include <optional>
 #include <memory>
 #include <string>
+#include <fmt/core.h>
+#include <fmt/ranges.h> 
 
 #include "plansys2_core/PlanSolverBase.hpp"
 

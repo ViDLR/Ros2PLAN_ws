@@ -61,6 +61,7 @@ private:
     std::map<std::string, std::shared_ptr<plansys2::LifecycleServiceClient>> lifecycle_clients_;
     std::shared_ptr<rclcpp::executors::MultiThreadedExecutor> shared_executor_;
     std::map<std::string, std::shared_ptr<plansys2::ExecutorNode>> team_nodes_;
+    std::map<std::string, std::shared_ptr<SimulationNode>> simulator_nodes_;  // Persistent robot simulators
     std::mutex thread_mutex_;
     std::atomic<bool> stop_all_flag_;
     std::thread spin_thread_;
