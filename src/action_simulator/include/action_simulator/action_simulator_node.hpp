@@ -69,11 +69,13 @@ private:
     float get_estimated_duration(const std::string &action_name, const std::string &target_name);
     void publish_progress(float completion, int8_t status);
     void publish_knowledge_update();
-    std::string determine_failure_type(const std::string &action_name);
+    std::string determine_failure_type(const std::string &action_name,const std::string current_action_suffix_);
+    std::string resolve_suffixed_action_suffix(const std::string& base_action);
 
     // Member variables
     RobotState robot_state_;
     WorldState world_state_;
+    std::string current_action_suffix_;
 
     // Stocking the failure output
     std::string failure_status_;
@@ -81,8 +83,10 @@ private:
     std::string failure_bool_;
     bool action_active_ = false;
     std::string current_action_id_;
+    float stored_delay_value_ = 0.0;
 
     builtin_interfaces::msg::Time start_stamp_action_;
+    std::map<std::string, int> seen_action_counter_;
 
     // Subscriptions and publishers
     rclcpp::Subscription<plansys2_msgs::msg::ActionExecutionInfo>::SharedPtr action_subscription_;

@@ -2120,6 +2120,9 @@ def update_STN_temporal_links(STN, executed_path, execution_time):
     """ Updates the STN by setting execution time constraints to dependent paths. """
 
     if executed_path in STN.nodes:
+        # ✅ Save execution time so later retrievals like stn.nodes[x]["execution_time"] work
+        STN.nodes[executed_path]["execution_time"] = execution_time
+
         # Update the executed node's latest_finish time
         STN.nodes[executed_path]["latest_finish"] = execution_time
 
@@ -2220,6 +2223,7 @@ def build_STN(paths, sequential_links):
                      robots=path_info["robots"],
                      earliest_start=0, 
                      latest_finish=float('inf'),
+                     execution_time=0,
                      executed=False)
 
     # Add edges (dependencies between paths)
@@ -2291,4 +2295,34 @@ def extract_paths_with_dependencies(stn):
     print("\nUnique paths in plan (with dependencies):")
     for idx, data in sorted(paths.items(), key=custom_sort_key):
         print(f"path {idx}: {data['sites']} robots: {data['robots']} | Predecessors: {dependencies[idx]}")
+
+
+def estimate_path_duration(path, robot_state, mission):
+    avg_speed = 1.5
+    total_time = 0
+    previous_loc = robot_state[list(robot_state.keys())[0]]["loc"]
+    for site in path:
+        next_site = next(s for s in mission.sites if s.name == site)
+        travel_time = distance(previous_loc, next_site.center) / avg_speed
+        total_time += travel_time + 60  # +60s assumed operation time
+        previous_loc = next_site.center
+    return total_time
+
+# from unified_planning.shortcuts import *
+# from unified_planning.engines import PlanGenerationResultStatus
+
+# domain = "/home/virgile/PHD/test_ws/MMdomainextended.pddl"
+# problem = "/home/virgile/PHD/test_ws/site1.pddl"
+# output = "/home/virgile/PHD/test_ws/UPFtest.txt"
+# plan = "/home/virgile/PHD/test_ws/UPFplan.txt"
+
+# reader = PDDLReader()
+# upf_pb = reader.parse_problem(domain, problem)
+
+# planner = OneshotPlanner(name="tamer")
+# result = planner.solve(upf_pb)
+# if result.status == PlanGenerationResultStatus.SOLVED_SATISFICING:
+#     print('found a plan')
+# else:
+#     print("No plan found.")
 

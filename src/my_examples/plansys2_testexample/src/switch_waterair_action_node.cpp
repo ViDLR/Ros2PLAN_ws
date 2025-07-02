@@ -41,26 +41,25 @@ void SwitchWaterAirActionNode::do_work()
   if (!action_in_progress_) {
     plansys2_msgs::msg::ActionExecutionInfo msg;
     current_poi1_ = current_arguments_[1];
-    current_site1_ = current_arguments_[2];
-    msg.action_full_name = action_managed_ + " " + current_poi1_;
+    msg.action_full_name = action_managed_ + " " + robot_name_ + " " + current_poi1_ + " ";
     msg.start_stamp = this->get_clock()->now();
     msg.status_stamp = this->get_clock()->now();
     msg.status = plansys2_msgs::msg::ActionExecutionInfo::EXECUTING;
-    msg.action = action_managed_ + robot_name_;
+    msg.action = action_managed_;
     msg.completion = 0.0;
     msg.message_status = "";
-    msg.arguments = {current_poi1_,current_arguments_[2]};
+    msg.arguments = {current_poi1_,current_poi1_};
   
     publisher_->publish(msg);
     action_in_progress_ = true;
-    current_action_id_ = action_managed_ + robot_name_;
+    current_action_id_ = action_managed_ + " " + robot_name_ + " " + current_poi1_ + " ";
     RCLCPP_INFO(this->get_logger(), "Sending switch_waterair with action ID: %s and robot ID: %s", current_action_id_.c_str(), robot_name_.c_str());
   }
 }
 
 void SwitchWaterAirActionNode::result_callback(const plansys2_msgs::msg::ActionExecutionInfo::SharedPtr msg)
-{
-  if (msg->action == current_action_id_) {
+{   
+  if (msg->action_full_name == current_action_id_) {
     float progress = msg->completion;
     int8_t status = msg->status;
     std::string msgstatus = msg->message_status;
@@ -91,9 +90,9 @@ CallbackReturnT SwitchWaterAirActionNode::on_deactivate(const rclcpp_lifecycle::
   }
   if (action_in_progress_) {
     plansys2_msgs::msg::ActionExecutionInfo msg;
-    msg.action_full_name = action_managed_ + " " + current_poi1_;
+    msg.action_full_name = action_managed_ + " " + robot_name_ + " " + current_poi1_;
     msg.status = plansys2_msgs::msg::ActionExecutionInfo::CANCELLED;
-    msg.action = action_managed_ + robot_name_;
+    msg.action = action_managed_;
     msg.completion = 0.0;
     msg.message_status = ""; // if we give the message of failure it will be here
 

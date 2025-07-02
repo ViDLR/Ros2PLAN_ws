@@ -99,6 +99,7 @@ def main():
         executable_paths = Class_and_functions.get_executable_paths(stn)
 
         for path_idx in executable_paths:
+            print("Solving path : ", path_idx)
             sync_created = False
             path_info = stn.nodes[path_idx]
             pathplan = []
@@ -112,17 +113,14 @@ def main():
 
             # Retrieve last known state for each robot
             robot_state = {robot: robot_states[robot] for robot in robots}
+            previous_robotstate = {r: dict(robot_states[r]) for r in robots}
 
             # **Step 1: Handle Multi-Predecessor Synchronization (Dynamic "Goto" Paths)**
             predecessors = list(stn.predecessors(path_idx))
-
             site_obj = next((s for s in mission.sites if s.name == path[0]), None)
-            # ✅ **New Condition: Check if Any Robot is Already at path[0]**
-            if len(predecessors) > 1 and not any(robot_state[robot]["site"] == path[0] for robot in robots):
-                # print(f"⚠️ Path {path_idx} has multiple predecessors: {predecessors}")
-                # Get the **latest** finishing time among all predecessors
-                # print("look at predecessors:", [stn.nodes[p]["latest_finish"] for p in predecessors])
 
+            # === STEP 1: Synchronization (Multi-predecessor case) loop ===
+            if len(predecessors) > 1 and not any(robot_state[robot]["site"] == path[0] for robot in robots):
                 travel_time = {}
                 finishing_times = {}
                 arrival_times = {}
@@ -201,13 +199,17 @@ def main():
             # A sync path has been created so we need to execute it first
             if sync_created:
                 break
+            
 
-            # **Step 2: Solve Each Step in the Path**
+            # **Step 3: Solve Each Step in the Path**
             for i in range(len(path)):
                 # print(f"🔹 Solving: {[r for r in robot_state.keys()]} -> {path[i]}")
 
                 # Define goal type
-                goal_type = "goto" if path[i] == "base" or "sync" in str(path_idx) else "solving"
+                if path[i] == "base" or ("sync" in str(path_idx) and len(path) == 1):
+                    goal_type = "goto"
+                else:
+                    goal_type = "solving"
 
                 # Generate problem
                 # print(robot_state)
@@ -238,19 +240,97 @@ def main():
                     robot_state[r]["time"] =max_execution_time
                 # print("max_execution_time",max_execution_time, "\n")
 
-            for robot in robots:
-                robot_states[robot] = robot_state[robot]  # Save robot's latest known state
-
             # print("THE ROBOT STATES", robot_states, "\n")
 
             merged_path_file = f"{subproblems_dir}/PATH_{path_idx}_mergedPLAN.txt"
+            # print(pathplan, merged_path_file, path)
             Class_and_functions.merge_for_single_path(pathplan, merged_path_file, domain_file, Path(problem_file))
             # mergedplans.append(Path(merged_path_file))
 
             # Update STN with execution times
             Class_and_functions.update_STN_temporal_links(stn, path_idx, max_execution_time)
-            # **Mark the Node as Executed Instead of Removing It**
-            stn.nodes[path_idx]["executed"] = True
+
+            
+
+            # Count total plan length (aggregated across all problem steps)
+            plan_lines=0
+            if os.path.isfile(merged_path_file):
+                with open(merged_path_file, "r") as f:
+                    plan_lines = sum(1 for line in f if line.strip() and not line.strip().startswith(";"))
+
+            # print(plan_lines)
+
+            synced_too_long = False
+            if (
+                plan_lines > 40
+                and len(path) > 1
+                and "sync" not in str(path_idx)
+                and not any("sync" in s for s in stn.successors(path_idx))
+            ):
+                split_index = len(path) // 2
+                path1 = path[:split_index]
+                path2 = path[split_index:]
+
+                stn.nodes[path_idx]["sites"] = path1
+
+                sync_path_id = f"sync_{path_idx}_a"
+                stn.add_node(
+                    sync_path_id,
+                    sites=path2,
+                    robots=robots,
+                    earliest_start=0,
+                    latest_finish=float("inf"),
+                    execution_time=0,
+                    executed=False
+                )
+
+                for succ in list(stn.successors(path_idx)):
+                    edge_data = stn.get_edge_data(path_idx, succ)
+                    stn.remove_edge(path_idx, succ)
+                    stn.add_edge(sync_path_id, succ, **edge_data)
+
+                stn.add_edge(path_idx, sync_path_id, min_time_gap=stn.nodes[path_idx]["execution_time"])
+
+                print(f"📎 Splitting after execution: Path {path_idx} had {plan_lines} actions")
+                print(f"    🔹 {path1} (ID: {path_idx})")
+                print(f"    🔹 {path2} (ID: {sync_path_id})")
+
+                # ✅ Rewind robot state based on path1 execution
+                print("🔁 Recomputing robot state for split path (only path1 executed)")
+
+                temp_robot_state = {r: dict(robot_states[r]) for r in robots}
+                split_robot_state = {r: dict(temp_robot_state[r]) for r in temp_robot_state}
+
+                for i in range(len(path1)):
+                    goal_type = "goto" if path1[i] == "base" else "solving"
+                    temp_prblm_path = Class_and_functions.GenerateAdaptedProblem(mission, problem_file, split_robot_state, path1[i], goal_type)
+                    try:
+                        Planner_command = "timeout -v 1m {2} -N {0} {1}.pddl".format(domain_file, temp_prblm_path, optic_cplex_path)
+                        time_output_file = f"{temp_prblm_path}_time_output.txt"
+                        PDDL_outputfile = f"{temp_prblm_path}_PLAN.txt"
+                        command = f"/usr/bin/time -v {Planner_command} > {PDDL_outputfile} 2> {time_output_file}"
+                        subprocess.run(command, shell=True)
+                        Class_and_functions.trim_plan_file(PDDL_outputfile)
+                    except IndexError:
+                        print("INDEX ERROR during state rewind")
+
+                    prev_time = max(split_robot_state[r]["time"] for r in split_robot_state)
+                    split_robot_state, plan_end_time, _ = Class_and_functions.p_plan(PDDL_outputfile, split_robot_state, mission)
+                    max_exec = plan_end_time + prev_time
+                    for r in split_robot_state:
+                        split_robot_state[r]["time"] = max_exec
+
+                # ✅ Replace robot state
+                for r in robots:
+                    robot_states[r] = previous_robotstate[r]
+
+                synced_too_long = True
+
+            if not synced_too_long:
+                # **Mark the Node as Executed Instead of Removing It**
+                for robot in robots:
+                    robot_states[robot] = robot_state[robot]  # Save robot's latest known state
+                stn.nodes[path_idx]["executed"] = True
 
     # Class_and_functions.draw_STN(stn)
     t_alloc_full_1 = time.perf_counter()

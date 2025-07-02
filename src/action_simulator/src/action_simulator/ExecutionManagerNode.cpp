@@ -390,14 +390,14 @@ void ExecutionManagerNode::ExecutionSequenceFunction()
     // Ensure `active_teams` is filled properly
     RCLCPP_INFO(this->get_logger(), "Checking active teams before sending to STN: %zu teams.", active_teams.size());
     
-    // ✅ Print parsed plans after ARMS processing
-    RCLCPP_INFO(this->get_logger(), "📜 Parsed Plans in teams_plans:");
-    for (const auto& [team_name, plan] : teams_plans) {  // Correct way to iterate over a map
-        RCLCPP_INFO(this->get_logger(), "📜 Team [%s] -> Steps: %zu", team_name.c_str(), plan.items.size());
-        for (const auto& item : plan.items) {
-            RCLCPP_INFO(this->get_logger(), "  - [%f] (%s)", item.time, item.action.c_str());
-        }
-    }
+    // // ✅ Print parsed plans after ARMS processing
+    // RCLCPP_INFO(this->get_logger(), "📜 Parsed Plans in teams_plans:");
+    // for (const auto& [team_name, plan] : teams_plans) {  // Correct way to iterate over a map
+    //     RCLCPP_INFO(this->get_logger(), "📜 Team [%s] -> Steps: %zu", team_name.c_str(), plan.items.size());
+    //     for (const auto& item : plan.items) {
+    //         RCLCPP_INFO(this->get_logger(), "  - [%f] (%s)", item.time, item.action.c_str());
+    //     }
+    // }
     // ✅ Initialize STN with parsed data
     stn_controller_->initializePaths(active_teams, teams_plans, team_dependencies_);
     // ✅ Use MultiThreadedExecutor in a separate thread
@@ -408,10 +408,10 @@ void ExecutionManagerNode::ExecutionSequenceFunction()
     });
 
     std::this_thread::sleep_for(std::chrono::seconds(5)); // Small delay to ensure nodes are active
-
+    publish_world_info("src/my_examples/plansys2_testexample/pddl/world_info.json");
     stn_controller_->triggerInitialExecutions();
 
-    // ✅ ExecutionSequenceFunction continues running other logic
+    // ExecutionSequenceFunction continues running other logic
     RCLCPP_INFO(this->get_logger(), "ExecutionManagerNode is running ESF logic after spinning...");
     // // Notify that STN is in control
     // RCLCPP_INFO(this->get_logger(), "STN Initialized. Monitoring execution...");
