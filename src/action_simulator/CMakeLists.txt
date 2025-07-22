@@ -62,6 +62,23 @@ install(DIRECTORY include/
   DESTINATION include/
 )
 
+install(DIRECTORY external_validator/
+  DESTINATION lib/${PROJECT_NAME}/external_validator
+  USE_SOURCE_PERMISSIONS
+)
+
+install(
+  DIRECTORY scripts/
+  DESTINATION share/${PROJECT_NAME}/scripts
+  USE_SOURCE_PERMISSIONS
+)
+
+install(
+  DIRECTORY scripts/
+  DESTINATION lib/${PROJECT_NAME}/scripts
+  USE_SOURCE_PERMISSIONS
+)
+
 # Install library and executables
 install(TARGETS
   ${PROJECT_NAME}

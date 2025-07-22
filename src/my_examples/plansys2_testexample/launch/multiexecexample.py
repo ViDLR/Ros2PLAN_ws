@@ -113,7 +113,7 @@ def generate_launch_description():
 
 
     execution_manager_node_cmd = TimerAction(
-        period=5.0,  # Delay of 5 seconds
+        period=2.0,  # Delay of 5 seconds
         actions=[
             Node(
                 package='action_simulator',

@@ -16,71 +16,104 @@ void STNController::subscribeToSimulationFeedback(const std::string& robot_name)
     simulation_result_subs_[robot_name] = this->create_subscription<plansys2_msgs::msg::ActionExecutionInfo>(
         topic, 10,
         [this, robot_name](const plansys2_msgs::msg::ActionExecutionInfo::SharedPtr msg) {
-            if (msg->status != plansys2_msgs::msg::ActionExecutionInfo::EXECUTING) return;
-
             std::string full_action = msg->action_full_name;
             std::string action_type = msg->action;
 
-            // ✅ Extract suffix safely from message_status
+            // === ✅ Handle FAILURE FIRST
+            if (msg->status == plansys2_msgs::msg::ActionExecutionInfo::FAILED) {
+                if (last_failed_action_[robot_name] == full_action) {
+                    RCLCPP_WARN(this->get_logger(),
+                        "⏭️ Duplicate failure for [%s] on action [%s], ignoring.",
+                        robot_name.c_str(), full_action.c_str());
+                    return;
+                }
+
+                RCLCPP_WARN(this->get_logger(),
+                    "❌ [%s] FAILED: %s | msg: %s",
+                    robot_name.c_str(), full_action.c_str(), msg->message_status.c_str());
+
+                last_failed_action_[robot_name] = full_action;
+
+                this->handleExecutionFailure(*msg);
+                return;
+            }
+
+            // ✅ Extract suffix safely (may affect full_action key!)
             std::string suffix = "";
             if (msg->message_status.size() > 6 && msg->message_status.substr(0, 6) == "0 none") {
-                suffix = msg->message_status.substr(6);  // includes space if needed
+                suffix = msg->message_status.substr(6);
                 full_action += suffix;
             }
 
-            rclcpp::Time start_time(msg->start_stamp);
-            double expected_end = start_time.seconds() + msg->estimated_duration;
-
-            // Update robot state
-            RobotLiveState state;
-            state.current_action = full_action;
-            state.args = msg->arguments;
-            state.status = msg->status;
-            state.status_stamp = msg->status_stamp;
-            state.expected_end_time = expected_end;
-            robot_live_states_[robot_name] = state;
-
-            // Update team action map if exists
-            std::string matched_team = "";
-            for (const auto& [team, action_map] : team_action_tracking_) {
-                if (action_map.count(full_action)) {
-                    matched_team = team;
-                    // RCLCPP_INFO(this->get_logger(),
-                    //     "[🔍 ACTION-TEAM MATCH] Action [%s] found in team [%s]",
-                    //     full_action.c_str(), team.c_str());
-
-                    team_action_tracking_[team][full_action].expected_end_time = expected_end;
-                    robot_live_states_[robot_name].current_action = full_action;
-                    break;
-                } else {
-                    RCLCPP_DEBUG(this->get_logger(),
-                        "[👀 NO MATCH] Action [%s] NOT in team [%s]", 
-                        full_action.c_str(), team.c_str());
+            // === ✅ Mark as executed if SUCCEEDED
+            if (msg->status == plansys2_msgs::msg::ActionExecutionInfo::SUCCEEDED) {
+                for (auto& [team, action_map] : team_action_tracking_) {
+                    if (action_map.count(full_action)) {
+                        action_map[full_action].executed = true;
+                        RCLCPP_INFO(this->get_logger(),
+                            "✅ Marked [%s] as executed in team [%s]", 
+                            full_action.c_str(), team.c_str());
+                        break;
+                    }
                 }
-            }
-            
-            if (!matched_team.empty()) {
-                team_action_tracking_[matched_team][full_action].expected_end_time = state.expected_end_time;
-            
-                RCLCPP_DEBUG(this->get_logger(),
-                    "✅ [STN] EXECUTING: [%s] from [%s] found in team [%s] map. Updated end=%.2f",
-                    full_action.c_str(), robot_name.c_str(), matched_team.c_str(), state.expected_end_time);
-            } else {
-                RCLCPP_DEBUG(this->get_logger(),
-                    "❌ [STN] EXECUTING: [%s] on [%s] NOT found in ANY team map!",
-                    full_action.c_str(), robot_name.c_str());
-                RCLCPP_DEBUG(this->get_logger(), "💡 Consider checking if robot-to-team assignment is outdated or missing.");
+                return;  // After SUCCEEDED update, we skip EXECUTING-specific logic
             }
 
-            // Highlight sample and translate_data actions
-            if (action_type == "sample" || action_type == "translate_data") {
-                RCLCPP_INFO(this->get_logger(),
-                    "📥 [STN] EXECUTING [%s] by [%s] | type: [%s] | start=%.2f | end=%.2f | dur=%.2f",
-                    full_action.c_str(), robot_name.c_str(), action_type.c_str(),
-                    start_time.seconds(), expected_end, msg->estimated_duration);
+            // === ✅ Handle EXECUTING (after handling SUCCEEDED)
+            if (msg->status == plansys2_msgs::msg::ActionExecutionInfo::EXECUTING) {
+                rclcpp::Time start_time(msg->start_stamp);
+                double expected_end = start_time.seconds() + msg->estimated_duration;
+
+                // Update robot state
+                RobotLiveState state;
+                state.current_action = full_action;
+                state.args = msg->arguments;
+                state.status = msg->status;
+                state.status_stamp = msg->status_stamp;
+                state.expected_end_time = expected_end;
+                robot_live_states_[robot_name] = state;
+
+                // Clear old failure if new action started
+                if (last_failed_action_.count(robot_name) && last_failed_action_[robot_name] != full_action) {
+                    RCLCPP_DEBUG(this->get_logger(),
+                        "🧹 Clearing failure tracking for [%s] (was: %s, now: %s)",
+                        robot_name.c_str(), last_failed_action_[robot_name].c_str(), full_action.c_str());
+                    last_failed_action_.erase(robot_name);
+                }
+
+                // Update action tracking
+                std::string matched_team = "";
+                for (auto& [team, action_map] : team_action_tracking_) {
+                    if (action_map.count(full_action)) {
+                        matched_team = team;
+                        action_map[full_action].expected_end_time = expected_end;
+                        robot_live_states_[robot_name].current_action = full_action;
+
+                        RCLCPP_DEBUG(this->get_logger(),
+                            "[🔍 ACTION-TEAM MATCH] [%s] in [%s] | end=%.2f",
+                            full_action.c_str(), team.c_str(), expected_end);
+                        break;
+                    }
+                }
+
+                if (matched_team.empty()) {
+                    RCLCPP_DEBUG(this->get_logger(),
+                        "❌ [STN] EXECUTING: [%s] on [%s] NOT found in ANY team map!",
+                        full_action.c_str(), robot_name.c_str());
+                    RCLCPP_DEBUG(this->get_logger(), "💡 Consider checking robot-to-team assignment.");
+                }
+
+                // Highlight key actions
+                if (action_type == "sample" || action_type == "translate_data") {
+                    RCLCPP_INFO(this->get_logger(),
+                        "📥 [STN] EXECUTING [%s] by [%s] | type: [%s] | start=%.2f | end=%.2f | dur=%.2f",
+                        full_action.c_str(), robot_name.c_str(), action_type.c_str(),
+                        start_time.seconds(), expected_end, msg->estimated_duration);
+                }
             }
         });
 }
+
 
 void STNController::initializePaths(
     const std::vector<plansys2_msgs::msg::Team>& teams, 
@@ -272,11 +305,14 @@ void STNController::triggerInitialExecutions() {
         }
     }
 
-    for (const auto& team_name : initial_teams) {
-        RCLCPP_INFO(this->get_logger(), "🚀 Starting execution for team: %s", team_name.c_str());
-        startTeamExecution(team_name);
-        RCLCPP_INFO(this->get_logger(), "✅ Team [%s] started successfully.", team_name.c_str());
-    }
+
+    startTeamExecution("team_0");
+
+    // for (const auto& team_name : initial_teams) {
+    //     RCLCPP_INFO(this->get_logger(), "🚀 Starting execution for team: %s", team_name.c_str());
+    //     startTeamExecution(team_name);
+    //     RCLCPP_INFO(this->get_logger(), "✅ Team [%s] started successfully.", team_name.c_str());
+    // }
 }
 
 std::string STNController::extractToken(const std::string& action_string, const std::string& prefix) {
@@ -339,84 +375,122 @@ void STNController::startTeamSyncTimer(const std::string& team_name) {
     team_sync_timers_[team_name] = this->create_wall_timer(
         1s,
         [this, team_name]() {
-            if (!team_action_tracking_.count(team_name)) {
-                RCLCPP_DEBUG(this->get_logger(), "🚨 No action map found for team [%s]", team_name.c_str());
-                return;
-            }
-
-            auto& action_map = team_action_tracking_[team_name];
-            // if (team_name == "team_0") {
-            //     RCLCPP_INFO(this->get_logger(), "[🔍 DEBUG in synctimer] Registered actions and dependencies for team_0:");
-            //     for (const auto& [action_name, info] : action_map) {
-            //         std::stringstream dep_stream;
-            //         for (const auto& dep : info.depends_on) {
-            //             dep_stream << dep << " ";
-            //         }
-
-            //         RCLCPP_INFO(this->get_logger(),
-            //             " ├─ Action: %-35s | Robot: %-10s | Depends On: [%s]",
-            //             action_name.c_str(),
-            //             info.robot.c_str(),
-            //             dep_stream.str().c_str()
-            //         );
-            //     }
-            // }
+            if (!team_action_tracking_.count(team_name)) return;
+            auto &action_map = team_action_tracking_[team_name];
             bool relevant_sync_found = false;
 
-            
+            // === ✅ CASE 1 — sample & translate_data both executing ===
+            for (const auto &[sample_name, sample_info] : action_map) {
+                if (sample_name.find("sample") == std::string::npos || sample_info.depends_on.empty()) continue;
+                if (!robot_live_states_.count(sample_info.robot)) continue;
 
-            for (const auto& [sample_action_name, sample_info] : action_map) {
-                if (sample_action_name.find("sample") == std::string::npos) continue;
+                const auto &sample_state = robot_live_states_[sample_info.robot];
+                if (sample_state.current_action != sample_name) continue;
 
-                const std::string& sample_robot = sample_info.robot;
-                if (!robot_live_states_.count(sample_robot)) continue;
+                for (const auto &td_name : sample_info.depends_on) {
+                    if (!action_map.count(td_name)) continue;
+                    const auto &td_info = action_map[td_name];
+                    if (td_info.executed || !robot_live_states_.count(td_info.robot)) continue;
 
-                const auto& sample_state = robot_live_states_[sample_robot];
-                if (sample_state.current_action != sample_action_name) continue;
+                    const auto &td_state = robot_live_states_[td_info.robot];
+                    if (td_state.current_action != td_name) continue;
 
-                if (sample_info.depends_on.empty()) continue;
-
-                for (const std::string& translate_action_name : sample_info.depends_on) {
-                    if (!action_map.count(translate_action_name)) continue;
-
-                    const auto& translate_info = action_map.at(translate_action_name);
-                    const std::string& translate_robot = translate_info.robot;
-
-                    if (!robot_live_states_.count(translate_robot)) continue;
-
-                    const auto& translate_state = robot_live_states_[translate_robot];
-
-                    if (translate_state.current_action != translate_action_name) continue;
-
-                    // ✅ Both actions currently executing
                     relevant_sync_found = true;
-
+                    double buffer = 1.5;
                     double sample_end = sample_state.expected_end_time;
-                    double translate_end = translate_state.expected_end_time;
-                    double buffer = 1.0;
+                    double td_end = td_state.expected_end_time;
 
-                    if (sample_end > translate_end) {
-                        float delay = static_cast<float>(sample_end - translate_end + buffer);
-                        sendDelayToRobot(team_name, translate_robot, delay);
-
-                        double new_start = sample_state.status_stamp.seconds() + delay;
-                        double new_end = new_start + sample_info.planned_duration;
-                        team_action_tracking_[team_name][sample_action_name].expected_end_time = new_end;
+                    if (sample_end > td_end) {
+                        float delay = static_cast<float>(sample_end - td_end + buffer);
+                        sendDelayToRobot(team_name, td_info.robot, delay);
+                        action_map[td_name].expected_end_time = sample_state.status_stamp.seconds() + delay + td_info.planned_duration;
 
                         RCLCPP_INFO(this->get_logger(),
-                            "🔄 DELAY: [%s] (robot %s) delayed by %.2fs to wait for [%s]",
-                            sample_action_name.c_str(), sample_robot.c_str(), delay, translate_action_name.c_str());
+                            "🔄 DELAY: [CASE 1] %s (robot %s) delayed by %.2fs to wait for sample %s",
+                            td_name.c_str(), td_info.robot.c_str(), delay, sample_name.c_str());
                     }
                 }
             }
 
+            // === ✅ CASE 2 — translate_data is executing, sample not yet executing ===
+            for (const auto &[td_name, td_info] : action_map) {
+                if (td_name.find("translate_data") == std::string::npos || td_info.executed) continue;
+                if (!robot_live_states_.count(td_info.robot)) continue;
+
+                const auto &td_state = robot_live_states_[td_info.robot];
+                if (td_state.current_action != td_name) continue;
+
+                // RCLCPP_INFO(this->get_logger(),
+                //     "🔍 [CASE 2] Checking translate_data [%s] by [%s]",
+                //     td_name.c_str(), td_info.robot.c_str());
+
+                double latest_blocking_end = 0.0;
+                std::string blocking_sample = "";
+                std::string blocking_robot = "";
+
+                for (const auto &[sample_name, sample_info] : action_map) {
+                    if (sample_name.find("sample") == std::string::npos || sample_info.executed) continue;
+
+                    // Only consider samples that depend on this translate_data
+                    if (std::find(sample_info.depends_on.begin(), sample_info.depends_on.end(), td_name) == sample_info.depends_on.end())
+                        continue;
+
+                    // if (!robot_live_states_.count(sample_info.robot)) {
+                    //     RCLCPP_WARN(this->get_logger(),
+                    //         "⚠️ Robot state for [%s] not found, skipping.", sample_info.robot.c_str());
+                    //     continue;
+                    // }
+
+                    const auto &sample_robot_state = robot_live_states_[sample_info.robot];
+
+                    const std::string &current_act = sample_robot_state.current_action;
+
+                    // If robot is busy with another action (not sample yet), and sample is not executing
+                    if (!current_act.empty() && current_act != sample_name) {
+                        // RCLCPP_INFO(this->get_logger(),
+                        //     "🔗 Sample [%s] not started yet (robot [%s] doing [%s], ends at %.2f) — delaying TD [%s]",
+                        //     sample_name.c_str(), sample_info.robot.c_str(), current_act.c_str(),
+                        //     sample_robot_state.expected_end_time, td_name.c_str());
+
+                        if (sample_robot_state.expected_end_time > latest_blocking_end) {
+                            latest_blocking_end = sample_robot_state.expected_end_time;
+                            blocking_sample = sample_name;
+                            blocking_robot = sample_info.robot;
+                        }
+                    }
+                    // } else if (current_act == sample_name) {
+                    //     RCLCPP_INFO(this->get_logger(),
+                    //         "✅ [%s] is already executing, no delay needed.", sample_name.c_str());
+                    // } else {
+                    //     RCLCPP_INFO(this->get_logger(),
+                    //         "⏸️ Robot [%s] is idle, sample [%s] has not started yet.",
+                    //         sample_info.robot.c_str(), sample_name.c_str());
+                    // }
+                }
+
+                if (latest_blocking_end > 0.0 && (latest_blocking_end + 1.5) > td_state.expected_end_time) {
+                    float delay = static_cast<float>(latest_blocking_end + 1.5 - td_state.expected_end_time);
+                    sendDelayToRobot(team_name, td_info.robot, delay);
+                    action_map[td_name].expected_end_time = latest_blocking_end + 1.5 + td_info.planned_duration;
+
+                    // RCLCPP_INFO(this->get_logger(),
+                    //     "📤 [CASE 2] Sent delay %.2fs to robot [%s] for [%s] to wait for [%s]'s action before [%s]",
+                    //     delay, td_info.robot.c_str(), td_name.c_str(),
+                    //     blocking_robot.c_str(), blocking_sample.c_str());
+                } 
+                // else {
+                //     RCLCPP_INFO(this->get_logger(),
+                //         "🟢 [CASE 2] No blocking action for [%s], no delay sent.", td_name.c_str());
+                // }
+
+            }
+
+
             if (!relevant_sync_found) {
-                RCLCPP_DEBUG(this->get_logger(), "ℹ️ No currently executing (sample, translate_data) pairs found.");
+                RCLCPP_DEBUG(this->get_logger(), "ℹ️ No (sample, translate_data) sync pair actively executing.");
             }
         });
 }
-
-
 
 
 void STNController::handleFailure(const std::string& team_name) {
@@ -431,6 +505,93 @@ void STNController::handleFailure(const std::string& team_name) {
         std_msgs::msg::String failure_msg;
         failure_msg.data = "Failure detected in team: " + team_name;
         execution_status_pub_->publish(failure_msg);
+    }
+}
+
+void STNController::handleExecutionFailure(
+    const plansys2_msgs::msg::ActionExecutionInfo &msg)
+{
+    std::string full_action = msg.action_full_name;
+    std::string action_type = msg.action;
+    std::string failure_status = msg.message_status;
+
+    // 🔢 Parse failure index (e.g., "1 fail 3")
+    int failure_idx = -1;
+    if (failure_status.rfind("1 fail ", 0) == 0) {
+        try {
+            failure_idx = std::stoi(failure_status.substr(7));
+        } catch (...) {
+            RCLCPP_ERROR(this->get_logger(), "⚠️ Failed to parse failure index from [%s]", failure_status.c_str());
+        }
+    } else {
+        RCLCPP_WARN(this->get_logger(), "⚠️ Unexpected failure_status format: '%s'", failure_status.c_str());
+    }
+
+    // 🧩 Parse action_full_name into components
+    std::istringstream iss(full_action);
+    std::string token, action, robot, point, site;
+    iss >> action >> robot >> point >> site;
+
+    // 🛟 Recover missing point or site from /tmp/world_info.json
+    if (point.empty() || site.empty()) {
+        std::ifstream world_info_file("/tmp/world_info.json");
+        if (world_info_file.is_open()) {
+            try {
+                nlohmann::json world_json;
+                world_info_file >> world_json;
+                for (const auto &r : world_json["robots"]) {
+                    if (r["name"] == robot) {
+                        if (point.empty() && r.contains("poi")) point = r["poi"];
+                        if (site.empty() && r.contains("site")) site = r["site"];
+                        break;
+                    }
+                }
+            } catch (const std::exception &e) {
+                RCLCPP_WARN(this->get_logger(), "⚠️ Failed to recover robot state from world_info.json: %s", e.what());
+            }
+        } else {
+            RCLCPP_WARN(this->get_logger(), "⚠️ Could not open /tmp/world_info.json");
+        }
+    }
+
+    // 👥 Resolve team
+    std::string team = "unknown_team";
+    if (robot_to_team_.count(robot)) {
+        team = robot_to_team_[robot];
+    }
+
+    // 📣 Publish readable failure message
+    std::ostringstream fail_oss;
+    fail_oss << "FAILURE | team: " << team
+             << " | robot: " << robot
+             << " | action: " << action
+             << " | point: " << point
+             << " | site: " << site
+             << " | index: " << failure_idx;
+
+    std_msgs::msg::String fail_msg;
+    fail_msg.data = fail_oss.str();
+    execution_status_pub_->publish(fail_msg);
+
+    RCLCPP_WARN(this->get_logger(), "📡 Published failure report: %s", fail_msg.data.c_str());
+
+    // 💾 Also save structured version to /tmp/failure_info.json
+    nlohmann::json failure_info;
+    failure_info["robot"] = robot;
+    failure_info["action"] = action;
+    failure_info["point"] = point;
+    failure_info["site"] = site;
+    failure_info["failure_index"] = failure_idx >= 0 ? std::to_string(failure_idx) : "";
+
+    RCLCPP_WARN(this->get_logger(), "🧪 Failure index before writing JSON: %d", failure_idx);
+    RCLCPP_WARN(this->get_logger(), "🧪 JSON content: %s", failure_info.dump(2).c_str());
+
+    std::ofstream out_file("/tmp/failure_info.json");
+    if (out_file.is_open()) {
+        out_file << failure_info.dump(2);
+        RCLCPP_INFO(this->get_logger(), "💾 Saved failure_info.json");
+    } else {
+        RCLCPP_ERROR(this->get_logger(), "❌ Could not write failure_info.json");
     }
 }
 
@@ -681,8 +842,8 @@ void STNController::createExecutorCallback(const std::string &team_name) {
                         createExecutorCallback(team.name);
                     }
 
-                    RCLCPP_WARN(this->get_logger(), "⏳ Waiting 5 seconds before starting teams...");
-                    rclcpp::sleep_for(std::chrono::seconds(5));
+                    RCLCPP_WARN(this->get_logger(), "⏳ Waiting 10 seconds before starting teams...");
+                    rclcpp::sleep_for(std::chrono::seconds(10));
 
                     for (const auto& team : ready_teams) {
                         startTeamExecution(team.name);

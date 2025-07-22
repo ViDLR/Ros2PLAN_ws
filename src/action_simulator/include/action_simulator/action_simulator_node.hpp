@@ -11,8 +11,10 @@
 #include <chrono>
 #include <random>
 #include <string>
+#include <fstream>
 #include <vector>
 #include <unordered_map>
+#include <nlohmann/json.hpp>
 
 class SimulationNode : public rclcpp::Node
 {
@@ -26,13 +28,17 @@ private:
         std::string failure_type; // Failure type (e.g., "0 none", "1 delay", etc.)
         float time;               // Scheduled start time
         float duration;           // Expected duration
+        bool executed;            // Whether this instance has been started
 
-        // Constructor for explicit initialization
+        // Constructor
         ActionInfo(const std::string &action_name = "",
-                const std::string &failure = "0 none",
-                float start_time = 0.0,
-                float action_duration = 0.0)
-            : name(action_name), failure_type(failure), time(start_time), duration(action_duration) {}
+            const std::string &failure = "0 none",
+            float start_time = 0.0,
+            float action_duration = 0.0,
+            bool has_executed = false)
+        : name(action_name), failure_type(failure),
+        time(start_time), duration(action_duration),
+        executed(has_executed) {}
     };
 
     // Robot state representation
@@ -41,6 +47,7 @@ private:
         std::string team;
         std::string current_action;
         std::string current_location;
+        std::string target;
         int8_t current_configuration = 0;
         std::vector<std::string> capabilities;  // robots capabilities
         float waterspeed = 0.5;
@@ -71,11 +78,13 @@ private:
     void publish_knowledge_update();
     std::string determine_failure_type(const std::string &action_name,const std::string current_action_suffix_);
     std::string resolve_suffixed_action_suffix(const std::string& base_action);
+    void save_robot_state_to_world_info(bool failure);
 
     // Member variables
     RobotState robot_state_;
     WorldState world_state_;
     std::string current_action_suffix_;
+    nlohmann::json failure_type_config_;
 
     // Stocking the failure output
     std::string failure_status_;

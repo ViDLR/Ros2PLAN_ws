@@ -1,0 +1,5 @@
+0: (switch_waterair robot6 sp20)[8]
+0: (navigation_water robot5 pp14 sp20 site7)[12.24]
+8.001: (change_site robot6 site7 site2 sp20 cpsite2)[370.186]
+12.241: (switch_waterair robot5 sp20)[8]
+20.242: (change_site robot5 site7 site2 sp20 cpsite2)[370.186]

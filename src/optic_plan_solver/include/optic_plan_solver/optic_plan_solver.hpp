@@ -18,6 +18,7 @@
 #include <filesystem>
 #include <optional>
 #include <memory>
+#include <nlohmann/json.hpp>
 #include <string>
 
 #include "plansys2_core/PlanSolverBase.hpp"
@@ -47,12 +48,12 @@ public:
     const std::string & node_namespace = "",
     const rclcpp::Duration solver_timeout = 15s);
 
-  std::vector<plansys2_msgs::msg::Plan> getMultiPathPlan(
-    const std::string &domain, const std::string &problem,
-    const std::string &node_namespace= "", 
-    const rclcpp::Duration solver_timeout = 15s,
-    const std::string &mode = "full", 
-    const std::vector<std::string> &paths = {"path1"});
+  std::map<std::string, plansys2_msgs::msg::Plan> getMultiPathPlan(
+    const std::string &domain, 
+    const std::string &problem,
+    const std::string &node_namespace,
+    const rclcpp::Duration solver_timeout,
+    const std::string &validation_report_path);
 
   bool isDomainValid(
     const std::string & domain,

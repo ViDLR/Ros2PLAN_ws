@@ -17,6 +17,9 @@
 #include <fmt/ranges.h>
 #include <regex>  
 #include <sstream> 
+#include "ament_index_cpp/get_package_prefix.hpp"
+#include "ament_index_cpp/get_package_share_directory.hpp"
+#include <filesystem>
 
 #include <fstream>
 #include <memory>
@@ -35,19 +38,31 @@ public:
 
 private:
     
-    void parseArmsResult(const std::string &file_path, const std::vector<plansys2_msgs::msg::Plan> &plans);
+    void parseArmsResult(const std::string &file_path,const std::map<std::string, plansys2_msgs::msg::Plan> &labeled_plans);
     std::vector<std::string> splitString(const std::string &input, char delimiter);
     std::shared_ptr<rclcpp::executors::MultiThreadedExecutor> executor_; // ✅ Declare executor_
     std::thread spin_thread_; // ✅ Declare spin thread
+    
+    struct ValResult {
+        std::string status;  // "SUCCESS" or "FAILURE"
+        int value;
+        std::vector<std::string> failed_actions;
+        std::vector<std::string> repair_advice;
+    };
+
+    ValResult parse_val_output(const std::string &file_path);
 
     // void initializeSTN()
     void load_and_save_world_info(const std::string &problem_info_path);
+    void load_and_save_failure_index(const std::string &src_path);
     void publish_world_info(const std::string &file_path);
 
     // STN handling
     void executionStatusCallback(const std_msgs::msg::String::SharedPtr msg);
     void handleFailure(const std::string &team_name);
     void validateFailureImpact(const std::string& team_name);
+    std::map<std::string, std::string> parseFailureStatus(const std::string& msg);
+    void applyFailureToProblem(const std::map<std::string, std::string>& failure_data);
     std::shared_ptr<STNController> stn_controller_;
     
     // void reload_knowledge_and_replan();

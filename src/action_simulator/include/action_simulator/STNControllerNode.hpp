@@ -16,6 +16,8 @@
 #include "plansys2_msgs/msg/team.hpp"
 #include "plansys2_msgs/srv/start_teams.hpp"
 #include "plansys2_msgs/srv/stop_teams.hpp"
+#include <nlohmann/json.hpp>
+#include <fstream>
 
 using namespace std::chrono_literals;
 
@@ -33,6 +35,7 @@ public:
 
     void publishExecutionStatus();               
     void handleFailure(const std::string& team_name);
+    void handleExecutionFailure(const plansys2_msgs::msg::ActionExecutionInfo &msg);
     void propagateDelay(const std::string& team_name, float delay);
     void triggerInitialExecutions();
     void startTeamSyncTimer(const std::string& team_name);
@@ -72,6 +75,7 @@ public:
         double planned_start_time;
         double planned_duration;
         double expected_end_time;
+        bool executed = false;
         std::vector<std::string> depends_on;  // List of action names that must finish before this
     };
     std::map<std::string, std::map<std::string, ActionTrackingInfo>> team_action_tracking_;
@@ -95,10 +99,12 @@ private:
     std::map<std::string, std::vector<std::string>> reverse_dependencies_;
 
     rclcpp::Publisher<std_msgs::msg::String>::SharedPtr execution_status_pub_;
+    std::unordered_map<std::string, std::string> last_failed_action_;
 
     // Team Lifecycle Manager Client
     rclcpp::Client<plansys2_msgs::srv::StartTeams>::SharedPtr start_teams_client_;
     rclcpp::Client<plansys2_msgs::srv::StopTeams>::SharedPtr stop_teams_client_;
+    
     
     std::map<std::string, std::string> robot_to_team_;
     std::map<std::string, std::vector<std::string>> team_to_robots_;

@@ -154,57 +154,67 @@ OPTICPlanSolver::getPlan(
   return ret;
 }
 
-std::vector<plansys2_msgs::msg::Plan> OPTICPlanSolver::getMultiPathPlan(
+std::map<std::string, plansys2_msgs::msg::Plan> OPTICPlanSolver::getMultiPathPlan(
     const std::string &domain, 
     const std::string &problem,
     const std::string &node_namespace,
     const rclcpp::Duration solver_timeout,
-    const std::string &mode,
-    const std::vector<std::string> &paths)
+    const std::string &validation_report_path)
 {
-    std::vector<plansys2_msgs::msg::Plan> multi_path_plans;
+    std::map<std::string, plansys2_msgs::msg::Plan> multi_path_plans;
 
     if (system(nullptr) == 0) {
-        return {}; // System command not available
+        return {};
     }
 
     const auto output_dir_maybe = create_folders(node_namespace);
     if (!output_dir_maybe) {
         return {};
     }
-    const auto &output_dir = output_dir_maybe.value();
-    RCLCPP_INFO(lc_node_->get_logger(), "Writing multi-path planning results to %s.", output_dir.string().c_str());
 
-    const auto domain_file_path = output_dir / std::filesystem::path("domain.pddl");
+    const auto &output_dir = output_dir_maybe.value();
+    const auto domain_file_path = output_dir / "domain.pddl";
     std::ofstream domain_out(domain_file_path);
     domain_out << domain;
     domain_out.close();
 
-    std::string solver_path = ament_index_cpp::get_package_share_directory("optic_plan_solver") + "/lib/optic_plan_solver/external_solver/optic-cplex";
+    // === Determine paths to solve
+    std::vector<std::string> paths;
+
+    if (!validation_report_path.empty() && std::filesystem::exists(validation_report_path)) {
+        std::ifstream report_file(validation_report_path);
+        nlohmann::json report;
+        report_file >> report;
+        for (const auto &entry : report["affected_paths"]) {
+            paths.push_back(entry.get<std::string>());
+        }
+    } else {
+        paths = {"path0"};  // fallback dummy path
+    }
+
+    std::string solver_path = ament_index_cpp::get_package_share_directory("optic_plan_solver") +
+                              "/lib/optic_plan_solver/external_solver/optic-cplex";
 
     for (const auto &path : paths) {
-        const auto problem_file_path = output_dir / std::filesystem::path("problem_" + path + ".pddl");
+        const auto problem_file_path = output_dir / ("problem_" + path + ".pddl");
         std::ofstream problem_out(problem_file_path);
         problem_out << problem;
         problem_out.close();
 
-        const auto plan_file_path = output_dir / std::filesystem::path("plan_" + path);
+        const auto plan_file_path = output_dir / ("plan_" + path);
         int status = system(
             (solver_path + " -N " +
-            domain_file_path.string() + " " + problem_file_path.string() + " > " + plan_file_path.string())
-            .c_str());
+             domain_file_path.string() + " " +
+             problem_file_path.string() + " > " +
+             plan_file_path.string()).c_str());
 
-        if (status == -1) {
-            continue;
-        }
+        if (status == -1) continue;
 
         std::ifstream plan_file(plan_file_path);
-        if (!plan_file.is_open()) {
-            continue;
-        }
+        if (!plan_file.is_open()) continue;
 
-        std::string line;
         plansys2_msgs::msg::Plan plan;
+        std::string line;
         bool solution_found = false;
 
         while (getline(plan_file, line)) {
@@ -212,38 +222,37 @@ std::vector<plansys2_msgs::msg::Plan> OPTICPlanSolver::getMultiPathPlan(
                 if (line.find("; Solution Found") != std::string::npos) {
                     solution_found = true;
                 }
-            } else if (line.front() != ';') {
+            } else if (!line.empty() && line.front() != ';') {
                 plansys2_msgs::msg::PlanItem item;
-                size_t colon_pos = line.find(":");
-                size_t colon_par = line.find(")");
-                size_t colon_bra = line.find("[");
 
-                if (colon_pos == std::string::npos || colon_par == std::string::npos || colon_bra == std::string::npos) {
+                size_t colon_pos = line.find(":");
+                size_t close_paren = line.find(")");
+                size_t bracket_open = line.find("[");
+
+                if (colon_pos == std::string::npos || close_paren == std::string::npos || bracket_open == std::string::npos)
+                    continue;
+
+                try {
+                    item.time = std::stof(line.substr(0, colon_pos));
+                    item.action = line.substr(colon_pos + 2, close_paren - colon_pos - 1);
+                    std::string duration = line.substr(bracket_open + 1);
+                    duration.pop_back();
+                    item.duration = std::stof(duration);
+                    plan.items.push_back(item);
+                } catch (...) {
                     continue;
                 }
-
-                std::string time = line.substr(0, colon_pos);
-                std::string action = line.substr(colon_pos + 2, colon_par - colon_pos - 1);
-                std::string duration = line.substr(colon_bra + 1);
-                duration.pop_back();
-
-                item.time = std::stof(time);
-                item.action = action;
-                item.duration = std::stof(duration);
-
-                plan.items.push_back(item);
             }
         }
 
-        plan_file.close();
-
         if (!plan.items.empty()) {
-            multi_path_plans.push_back(plan);
+            multi_path_plans[path] = plan;
         }
     }
 
     return multi_path_plans;
 }
+
 
 
 bool

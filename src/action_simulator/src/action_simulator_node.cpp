@@ -47,6 +47,19 @@ SimulationNode::SimulationNode(const std::string &robot_name, const std::string 
     dist_ = std::uniform_real_distribution<>(0.0, 1.0);
     failure_type_dist_ = std::uniform_int_distribution<>(1, 3);
 
+    // Load failure type config from disk
+    std::ifstream failure_file("/tmp/failure_index.json"); 
+    if (failure_file.is_open()) {
+        try {
+            failure_file >> failure_type_config_;
+            // RCLCPP_INFO(this->get_logger(), "✅ Loaded failure types from json file");
+        } catch (const std::exception &e) {
+            RCLCPP_ERROR(this->get_logger(), "❌ Failed to parse failure types JSON: %s", e.what());
+        }
+    } else {
+        RCLCPP_WARN(this->get_logger(), "⚠️ Could not open /tmp/failure_index.json");
+    }
+
     // Logging for initialization
     RCLCPP_INFO(this->get_logger(), "SimulationNode created for robot: %s",
                 robot_state_.robot_name.c_str());
@@ -69,8 +82,12 @@ void SimulationNode::world_info_callback(const plansys2_msgs::msg::WorldInfo::Sh
         world_state_.sites[site.id] = site;  // Directly store the Site message
     }
 
-    RCLCPP_INFO(this->get_logger(), "WorldInfo updated: %zu points and %zu sites",
-                world_state_.points.size(), world_state_.sites.size());
+    RCLCPP_INFO(this->get_logger(), "🌍 WorldInfo updated: %zu points and %zu sites",
+            world_state_.points.size(), world_state_.sites.size());
+
+    for (const auto &entry : world_state_.points) {
+        RCLCPP_INFO(this->get_logger(), "📌 Loaded POI: %s", entry.first.c_str());
+    }
 }
 
 float SimulationNode::get_estimated_duration(const std::string &action_name, const std::string &target_name)
@@ -80,6 +97,9 @@ float SimulationNode::get_estimated_duration(const std::string &action_name, con
         // for (const auto &pt : world_state_.points) {
         //     RCLCPP_INFO(this->get_logger(), "We have this point updated: %s and our target is: %s", pt.second.id.c_str(), target_name.c_str());
         // }
+
+        // RCLCPP_INFO(this->get_logger(), "robot at this location: %s, target name is: %s",
+        //                     robot_state_.current_location.c_str(), target_name.c_str());
         
         if (world_state_.points.find(robot_state_.current_location) == world_state_.points.end() ||
             world_state_.points.find(target_name) == world_state_.points.end()) {
@@ -173,6 +193,15 @@ float SimulationNode::get_estimated_duration(const std::string &action_name, con
 
 std::string SimulationNode::determine_failure_type(const std::string &action_name,const std::string current_action_suffix_)
 {
+    double random_draw = dist_(gen_);
+    // RCLCPP_INFO(this->get_logger(), "🎲 Random draw for forced 50%% failure: %.3f", random_draw);
+    // if (random_draw < 0.5){
+    //     if (robot_state_.current_action != "change_site")
+    //     {
+    //         return "1 fail 0";
+    //     }        
+    // }
+
     std::string full_action_key = action_name + current_action_suffix_;
     auto it = robot_state_.planned_actions.find(full_action_key);
     if (it != robot_state_.planned_actions.end()) {
@@ -180,16 +209,23 @@ std::string SimulationNode::determine_failure_type(const std::string &action_nam
     }
 
     // If the action does not exist, perform random failure determination
-    if (dist_(gen_) < 0.00001) {  // 1% chance of failure
-        int failure_type_gen = failure_type_dist_(gen_);
-        switch (failure_type_gen) {
-            case 1:
-                return "1 delay";  // Representing a delay type failure
-            case 2:
-                return "1 crash";  // Representing a crash type failure
-            case 3:
-                return "1 fail";   // Representing a normal failure
+    if (random_draw < 0.05) {  // ~5% chance of failure
+        if (failure_type_config_.contains(action_name)) {
+            const auto &failures = failure_type_config_[action_name];
+            int max_index = failures.size() - 1;
+
+            if (max_index >= 0) {
+                std::uniform_int_distribution<> fail_dist(0, max_index);
+                int selected_failure = fail_dist(gen_);
+
+                RCLCPP_INFO(this->get_logger(), "💥 Random failure [%s] → index %d",
+                            action_name.c_str(), selected_failure);
+
+                return "1 fail " + std::to_string(selected_failure);
+            }
         }
+
+        RCLCPP_WARN(this->get_logger(), "⚠️ No failure entries for action %s", action_name.c_str());
     }
 
     return "0 none";  // Default to no failure if random failure doesn't trigger
@@ -273,7 +309,7 @@ void SimulationNode::plan_callback(const plansys2_msgs::msg::Plan::SharedPtr msg
         }
 
         std::string full_action_key = cleaned_action + suffix;
-        ActionInfo action_info(full_action_key, "0 none", item.time, item.duration);
+        ActionInfo action_info(full_action_key, "0 none", item.time, item.duration, false);
         robot_state_.planned_actions[full_action_key] = action_info;
 
         RCLCPP_INFO(this->get_logger(),
@@ -299,7 +335,7 @@ void SimulationNode::action_callback(const plansys2_msgs::msg::ActionExecutionIn
         RCLCPP_INFO(this->get_logger(), "Received new action simulation request: (%s)", msg->action_full_name.c_str());
         
         robot_state_.current_action_progress  = 0.0;
-        std::string target = msg->arguments[1];
+        robot_state_.target = msg->arguments[1];
         robot_state_.current_location = msg->arguments[0];
         robot_state_.current_action =  msg->action;
 
@@ -309,11 +345,20 @@ void SimulationNode::action_callback(const plansys2_msgs::msg::ActionExecutionIn
         action_active_ = true;
         start_stamp_action_ = msg->start_stamp;
 
+        RCLCPP_INFO(this->get_logger(), "📥 Incoming action_full_name: [%s]", msg->action_full_name.c_str());
+
+        // for (const auto& [key, info] : robot_state_.planned_actions) {
+        //     RCLCPP_INFO(this->get_logger(), "🔍 Planned Action Key: [%s] | executed: %s", key.c_str(), info.executed ? "true" : "false");
+        // }
+
         // 🔍 Resolve possible suffix from planned_actions
         current_action_suffix_  = resolve_suffixed_action_suffix(current_action_id_);
         RCLCPP_INFO(this->get_logger(), "current_action_suffix_: %s, of action %s", current_action_suffix_.c_str(), current_action_id_.c_str());
 
-        RCLCPP_INFO(this->get_logger(), "Action is active");
+        std::string full_action_key = current_action_id_ + current_action_suffix_;
+        RCLCPP_INFO(this->get_logger(), "🎯 Using full key: [%s]", full_action_key.c_str());
+
+        // RCLCPP_INFO(this->get_logger(), "Action is active");
 
         failure_status_ = determine_failure_type(current_action_id_, current_action_suffix_);
 
@@ -322,7 +367,7 @@ void SimulationNode::action_callback(const plansys2_msgs::msg::ActionExecutionIn
 
         RCLCPP_INFO(this->get_logger(), "Will the action fail: %s", failure_status_.c_str());
 
-        robot_state_.current_action_estimated_duration = get_estimated_duration(robot_state_.current_action, target);
+        robot_state_.current_action_estimated_duration = get_estimated_duration(robot_state_.current_action, robot_state_.target);
 
     } else {
         RCLCPP_INFO(this->get_logger(), "Action already in progress: %s", current_action_id_.c_str());
@@ -365,7 +410,6 @@ void SimulationNode::update_progress()
 
     if (failure_bool_ != "0") {
         if (failure_type_ == "delay") {
-            robot_state_.current_action_estimated_duration += stored_delay_value_;
             RCLCPP_INFO(this->get_logger(), "Delay in action %s, current progress: %f, estimated duration: %f", robot_state_.current_action.c_str(), robot_state_.current_action_progress, robot_state_.current_action_estimated_duration);
             failure_bool_ = "0";
             failure_type_ = "none";
@@ -380,9 +424,11 @@ void SimulationNode::update_progress()
     }
 
     if (robot_state_.current_action_progress  >= robot_state_.current_action_estimated_duration) {
+        std::string full_action_key = current_action_id_ + current_action_suffix_;
         robot_state_.current_action_progress  = robot_state_.current_action_estimated_duration;
         action_active_ = false;
         RCLCPP_INFO(this->get_logger(), "Action %s completed in platform",  robot_state_.current_action.c_str());
+        robot_state_.planned_actions[full_action_key].executed = true;
         publish_progress(robot_state_.current_action_progress , plansys2_msgs::msg::ActionExecutionInfo::SUCCEEDED);
     } else {
         float progress_percentage = std::round((robot_state_.current_action_progress / robot_state_.current_action_estimated_duration) * 1000) / 10;
@@ -390,6 +436,128 @@ void SimulationNode::update_progress()
         publish_progress(robot_state_.current_action_progress, plansys2_msgs::msg::ActionExecutionInfo::EXECUTING);
     }
 }
+
+void SimulationNode::save_robot_state_to_world_info(bool failure)
+{
+    std::ifstream infile("/tmp/world_info.json");
+    if (!infile.is_open()) {
+        RCLCPP_WARN(this->get_logger(), "⚠️ Could not open /tmp/world_info.json for reading.");
+        return;
+    }
+
+    nlohmann::json world_json;
+    try {
+        infile >> world_json;
+    } catch (const std::exception &e) {
+        RCLCPP_ERROR(this->get_logger(), "❌ Failed to parse world_info.json: %s", e.what());
+        return;
+    }
+    infile.close();
+
+    const std::string &start_poi = robot_state_.current_location;
+    std::string goal_poi = robot_state_.target;
+    if (goal_poi.empty() || world_state_.points.find(goal_poi) == world_state_.points.end()) {
+        RCLCPP_DEBUG(this->get_logger(),
+            "⚠️ Action target (goal_poi) is missing or invalid [%s]. Falling back to current_location [%s]",
+            goal_poi.c_str(), robot_state_.current_location.c_str());
+        goal_poi = robot_state_.current_location;
+    }
+
+    if (!world_state_.points.count(start_poi) || !world_state_.points.count(goal_poi)) {
+        std::string available_pois;
+        for (const auto &entry : world_state_.points) {
+            available_pois += entry.first + " ";
+        }
+
+        RCLCPP_WARN(this->get_logger(), 
+            "⚠️ Missing POI(s): '%s' or '%s'\nAvailable POIs: %s", 
+            start_poi.c_str(), goal_poi.c_str(), available_pois.c_str());
+        return;
+    }
+
+    std::vector<float> position(3);
+    std::string used_poi;
+    std::string inferred_site = "unknown";
+
+    if (failure) {
+        // ❌ Failure: keep current state
+        position = world_state_.points.at(start_poi).coordinates;
+        used_poi = start_poi;
+        // 🔍 Retrieve current site from world_info.json in failure mode
+        for (const auto &robot : world_json["robots"]) {
+            if (robot["name"] == robot_state_.robot_name && robot.contains("site")) {
+                inferred_site = robot["site"];
+                break;
+            }
+        }
+
+        RCLCPP_WARN(this->get_logger(), 
+            "❌ Robot [%s] action failed. Keeping current POI [%s] and site [%s].",
+            robot_state_.robot_name.c_str(), start_poi.c_str(), inferred_site.c_str());
+    } else {
+        // ✅ Success or in progress: interpolate
+        float duration = robot_state_.current_action_estimated_duration;
+        float elapsed = robot_state_.current_action_progress;
+        float progress = duration > 0.0 ? std::min(elapsed / duration, 1.0f) : 0.0f;
+
+        const auto &start_coords = world_state_.points.at(start_poi).coordinates;
+        const auto &goal_coords = world_state_.points.at(goal_poi).coordinates;
+
+        for (size_t i = 0; i < 3; ++i) {
+            position[i] = start_coords[i] + progress * (goal_coords[i] - start_coords[i]);
+        }
+
+        used_poi = goal_poi;
+
+        for (const auto &[site_id, site] : world_state_.sites) {
+            if (std::find(site.points.begin(), site.points.end(), goal_poi) != site.points.end()) {
+                inferred_site = site_id;
+                break;
+            }
+        }
+    }
+
+    bool updated = false;
+    for (auto &robot : world_json["robots"]) {
+        if (robot["name"] == robot_state_.robot_name) {
+            robot["loc"] = position;
+            robot["poi"] = used_poi;
+            robot["site"] = inferred_site;
+            updated = true;
+
+            RCLCPP_DEBUG(this->get_logger(), "🔄 World info updated for [%s] | poi: %s | site: %s",
+                        robot_state_.robot_name.c_str(), used_poi.c_str(), inferred_site.c_str());
+
+            // ✅ Only add missing POI in failure mode
+            if (failure && !world_state_.points.count(used_poi)) {
+                RCLCPP_WARN(this->get_logger(),
+                    "⚠️ POI [%s] not in world_state_.points — adding it due to failure mode.",
+                    used_poi.c_str());
+                plansys2_msgs::msg::Point new_point;
+                new_point.coordinates = position;
+                world_state_.points[used_poi] = new_point;
+            }
+
+            // 🚫 DO NOT update coordinates of known POIs on success/in-progress
+            break;
+        }
+    }
+
+    if (!updated) {
+        RCLCPP_WARN(this->get_logger(), "⚠️ Robot %s not found in world_info.json", robot_state_.robot_name.c_str());
+    }
+
+    std::ofstream outfile("/tmp/world_info.json");
+    if (outfile.is_open()) {
+        outfile << world_json.dump(2);
+        // RCLCPP_INFO(this->get_logger(), "📍 Robot [%s] state written to world_info.json", robot_state_.robot_name.c_str());
+    } else {
+        RCLCPP_ERROR(this->get_logger(), "❌ Failed to write updated world_info.json.");
+    }
+}
+
+
+
 
 
 void SimulationNode::publish_progress(float completion, int8_t status)
@@ -407,30 +575,44 @@ void SimulationNode::publish_progress(float completion, int8_t status)
     progress_msg.estimated_duration = robot_state_.current_action_estimated_duration;
     progress_msg.message_status = failure_status_ + current_action_suffix_;
 
-    // if (robot_state_.current_action.find("sample") != std::string::npos || robot_state_.current_action.find("translate_data") != std::string::npos) {
-    //     RCLCPP_INFO(this->get_logger(), "📤 [Sim] Publishing progress: [%s] | est_dur=%.2f | progress=%.1f%%",
-    //         robot_state_.current_action.c_str(),
-    //         robot_state_.current_action_estimated_duration,
-    //         completion * 100.0);
-    // }
-
+    save_robot_state_to_world_info(status == plansys2_msgs::msg::ActionExecutionInfo::FAILED); // update the state of the robot in worldinfo
     progress_publisher_->publish(progress_msg);
+
 }
 
 std::string SimulationNode::resolve_suffixed_action_suffix(const std::string& base_action)
 {
-    if (robot_state_.planned_actions.count(base_action)) {
-        return "";  // No suffix needed
+    // 1. Check for exact match (no suffix)
+    if (robot_state_.planned_actions.count(base_action) &&
+        !robot_state_.planned_actions[base_action].executed)
+    {
+        RCLCPP_INFO(this->get_logger(),
+            "🧠 Resolved base action with NO suffix: [%s]", base_action.c_str());
+        return "";
     }
 
-    // Search for suffixed versions like A, B, C...
-    for (const auto& [key, _] : robot_state_.planned_actions) {
-        if (key.rfind(base_action + " ", 0) == 0) {
-            std::string suffix = key.substr(base_action.size());  // includes space
-            return suffix;
+    // 2. Gather suffixed candidates
+    std::vector<std::string> candidate_keys;
+    for (const auto& [key, info] : robot_state_.planned_actions) {
+        if (key.rfind(base_action + " ", 0) == 0 && !info.executed) {
+            candidate_keys.push_back(key);
         }
     }
 
-    RCLCPP_WARN(this->get_logger(), "⚠️ Could not find suffixed match for [%s]", base_action.c_str());
-    return "";  // fallback
+    // 3. Sort keys to prioritize A, B, C...
+    std::sort(candidate_keys.begin(), candidate_keys.end());
+
+    if (!candidate_keys.empty()) {
+        std::string chosen_key = candidate_keys.front();
+        robot_state_.planned_actions[chosen_key].executed = true;
+        std::string suffix = chosen_key.substr(base_action.size());  // includes space
+        RCLCPP_INFO(this->get_logger(),
+            "🧠 Resolved suffix [%s] for base action [%s] → full key: [%s]",
+            suffix.c_str(), base_action.c_str(), chosen_key.c_str());
+        return suffix;
+    }
+
+    RCLCPP_WARN(this->get_logger(),
+        "⚠️ No unexecuted match found for [%s] — fallback to empty suffix", base_action.c_str());
+    return "";
 }

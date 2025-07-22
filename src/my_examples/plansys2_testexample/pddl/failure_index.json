@@ -1,0 +1,45 @@
+{
+    "change_site": {
+        "0": "robot_unavailable",
+        "1": "create_new_poi same_site",
+        "2": "create_new_poi new_site"
+    },
+    "navigation_water": {
+        "0": "robot_unavailable",
+        "1": "create_new_poi sp_type",
+        "2": "create_new_poi sp_type waterconf_only"
+    },
+    "navigation_air": {
+        "0": "robot_unavailable",
+        "1": "create_new_poi_sp_type",
+        "2": "create_new_poi obs_type"
+    },
+    "switch_airtowater": {
+        "0": "robot_unavailable",
+        "1": "robot_cannot_switch robot_waterconf",
+	"2": "robot_cannot_switch robot_airconf",
+        "3": "point_unswitchable"
+    },
+    "switch_watertoair": {
+        "0": "robot_unavailable",
+        "1": "robot_cannot_switch robot_airconf",
+        "2": "robot_cannot_switch robot_waterconf",
+        "3": "point_unswitchable"
+    },
+    "takeoff": {
+        "0": "robot_unavailable"
+    },
+    "landing": {
+        "0": "robot_unavailable"
+    },
+    "translate_data": {
+        "0": "robot_unavailable",
+        "1": "point_cannot_translate",
+        "2": "robot_cannot_translate"
+    },
+    "sample": {
+        "0": "robot_unavailable",
+        "1": "robot_cannot_sample",
+        "2": "remove_goal_point"
+    }
+}

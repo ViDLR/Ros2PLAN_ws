@@ -46,6 +46,12 @@ install(
   USE_SOURCE_PERMISSIONS
 )
 
+install(
+  DIRECTORY arms_utils/
+  DESTINATION share/${PROJECT_NAME}/arms_utils
+  USE_SOURCE_PERMISSIONS
+)
+
 install(DIRECTORY include/
   DESTINATION include/)
 
