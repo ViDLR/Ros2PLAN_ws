@@ -88,6 +88,15 @@ install(TARGETS
   RUNTIME DESTINATION lib/${PROJECT_NAME}
 )
 
+# Action simulator standalone exec
+add_executable(action_simulator_node_exec src/action_simulator_node_exec.cpp)
+ament_target_dependencies(action_simulator_node_exec ${dependencies})
+target_link_libraries(action_simulator_node_exec ${PROJECT_NAME})
+
+install(TARGETS action_simulator_node_exec
+  RUNTIME DESTINATION lib/${PROJECT_NAME}
+)
+
 # Install launch files
 install(DIRECTORY launch DESTINATION share/${PROJECT_NAME})
 

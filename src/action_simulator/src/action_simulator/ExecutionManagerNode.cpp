@@ -577,10 +577,6 @@ void ExecutionManagerNode::ExecutionSequenceFunction()
     
     load_and_save_failure_index("src/my_examples/plansys2_testexample/pddl/failure_index.json");
 
-    // Multi-path plan request
-    std::string replan_mode = "full";  // Can be 'full' or 'incremental'
-    std::vector<std::string> affected_paths = {"path1", "path2", "path3", "path4", "path5"};
-
     // Fetch and analyze the plan
     auto domain = domain_client_->getDomain();
     auto problem = problem_client_->getProblem();

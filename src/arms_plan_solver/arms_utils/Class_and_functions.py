@@ -55,7 +55,7 @@ class Robot():
     """ Current energy of the robot """
     available:bool = True
     """ robot is available """
-    canswitch:bool = True
+    canswitch:bool = True 
     """ robot can perform switching """
     canrelay:bool = True
     """ robot can perform relay """
@@ -124,7 +124,7 @@ class Poi():
     """ Type of poi, e.g: "transition", "sample", "survey" """
     isswitchable:bool = False
     """ can switch at the poi """
-    isrelay:bool = False
+    isrelay:bool = False 
     """ can relay at the poi """
     isgoal:bool = False
     """ this poi is a mission goal """
@@ -359,7 +359,7 @@ def Random_poi(mission=Mission(sites=[],robots=[])):
             poiloc=(round(uniform(site.center[0]-site.size//2, site.center[0]+site.size//2),1), \
                     round(uniform(site.center[1]-site.size//2, site.center[1]+site.size//2),1),\
                     -depth)
-            pp = Poi(name="pp{0}".format(tot_nb_pp+1), loc=poiloc, mediums=[-1],typepoi="sample")
+            pp = Poi(name="pp{0}".format(tot_nb_pp+1), loc=poiloc, mediums=[-1],typepoi="sample", isgoal  = True)
             site.poi.append(pp)
             tot_nb_pp+=1
         
@@ -367,7 +367,7 @@ def Random_poi(mission=Mission(sites=[],robots=[])):
             poiloc=(round(uniform(site.center[0]-site.size//2, site.center[0]+site.size//2),1), \
                     round(uniform(site.center[1]-site.size//2, site.center[1]+site.size//2),1),\
                     0)
-            sp = Poi(name="sp{0}".format(tot_nb_sp+1), loc=poiloc, mediums=[-1,1],typepoi="transition")
+            sp = Poi(name="sp{0}".format(tot_nb_sp+1), loc=poiloc, mediums=[-1,1],typepoi="transition", isswitchable = True,isrelay  = True)
             site.poi.append(sp)
             tot_nb_sp+=1
 
@@ -385,7 +385,7 @@ def Random_Robots(mission=Mission(sites=[],robots=[]),nbr = int()):
         else:
             md = randrange(-1,2,2)
 
-        rob = Robot(name="robot{0}".format(r),loc=mission.sites[0].poi[0].loc,medium=md,poi=mission.sites[0].poi[0].name,site=mission.sites[0].name, energy=10000)
+        rob = Robot(name="robot{0}".format(r),loc=mission.sites[0].poi[0].loc,medium=md,poi=mission.sites[0].poi[0].name,site=mission.sites[0].name, energy=10000, canswitch = True, canrelay = True, cansample = True)
 
         mission.robots.append(rob)
     
@@ -428,6 +428,7 @@ def Clustersite(poi=[], nb_cluster=int, weightslist=None):
 
     positions = np.array([vp.loc for vp in poi])
     # Implementing Kmeans method 
+    
     kmeans = KMeans(n_clusters=nb_cluster, random_state=0, n_init=10).fit(X=positions,sample_weight=weightslist)
 
     # Labels list for distribution of vp
@@ -486,7 +487,7 @@ def get_weights_of_sites(sites=[], robots=[], listrused=[]):
     - Ensures parallel execution scaling is balanced.
     - Adjusts for diminishing returns and navigation impact.
     """
-    
+            
     if not listrused:
         listrused = getlistusedRgroups(robots)
     
@@ -806,16 +807,17 @@ def GenerateAdaptedProblem(mission, previous_problem, robot_state, next_site, go
         # Process only relevant robot-related lines
         elif "robot" in line:
             if any(robot in line for robot in robot_state.keys()):
+                
                 modified = False  # Flag to track if we modified the line
                 
                 for robot in robot_state.keys():
-                    if 'at {} '.format(robot) in line:
+                    if 'at {}'.format(robot) in line:
                         new_lines.append(f"( at {robot} {robot_state[robot]['position']} )\n")
                         modified = True
-                    elif 'at_site {} '.format(robot) in line:
+                    elif 'at_site {}'.format(robot) in line:
                         new_lines.append(f"( at_site {robot} {robot_state[robot]['site']} )\n")
                         modified = True
-                    elif 'conf {} '.format(robot) in line:
+                    elif 'conf {}'.format(robot) in line:
                         new_lines.append(f"( {robot_state[robot]['conf']} {robot} )\n")
                         modified = True
                 
@@ -827,8 +829,7 @@ def GenerateAdaptedProblem(mission, previous_problem, robot_state, next_site, go
         # Filter out POI distance definitions that don't involve the current or next site
         elif "sp" in line or "pp" in line or "cp" in line:
             tmpline = line.split(" ")
-            poi_in_line = [exp for exp in tmpline if "sp" in exp or "pp" in exp or "cp" in exp]
-            
+            poi_in_line = [exp.strip("()") for exp in tmpline if "sp" in exp or "pp" in exp or "cp" in exp]
             # Keep only lines related to the current or next site
             if all(
                     any(exp == poi.name for poi in next_site.poi)  # At least one POI belongs to next_site
@@ -866,7 +867,8 @@ def GenerateAdaptedProblem(mission, previous_problem, robot_state, next_site, go
             break
 
         else:
-            new_lines.append(line + "\n")  # Keep all other lines
+            if line != "\n" and ";" not in line:
+                new_lines.append(line + "\n")  # Keep all other lines
 
     # Create the output directory if it doesn't exist
     output_dir = "/tmp/plan_output/subproblems/"
@@ -967,6 +969,7 @@ def recover_mission_from_json(json_file: Path) -> Mission:
                 currentpathcost=robot.get("currentpathcost", 0),
                 poi=robot["poi"],
                 site=robot["site"],
+                available=robot["available"],
                 energy=robot["energy"]
             ))
 
@@ -1019,10 +1022,16 @@ def Weightned_Cluster(mission, numb_clt=2):
     Now ensures the sites in each cluster follow an optimal order based on TSP
     and are then allocated from both sides alternately.
     """
+    filtered_sites = []
+    for site in mission.sites:
+        if "tr" in site.name:
+             print(f"⚠️ Skipping transition-only site: {site.name}")
+        else:
+            filtered_sites.append(site)
 
     # Extract site centers and weights
-    list_of_sites_center = np.array([s.poi[0].loc for s in mission.sites[1:] if s.poi])
-    weights_sites_list, _ = get_weights_of_sites(sites=mission.sites[1:], robots=mission.robots)
+    list_of_sites_center = np.array([s.poi[0].loc for s in filtered_sites[1:] if s.poi])
+    weights_sites_list, _ = get_weights_of_sites(sites=filtered_sites[1:], robots=mission.robots)
     
     # Normalize weights to balance location importance
     weights_sites_list = np.array(weights_sites_list) / np.max(weights_sites_list)
@@ -1036,10 +1045,10 @@ def Weightned_Cluster(mission, numb_clt=2):
     # Initialize clusters
     clusters_list = [Cluster_class(name=f"cluster{cl}") for cl in range(numb_clt)]
     for idx, label in enumerate(kmeans.labels_):
-        clusters_list[label].sites.append(mission.sites[idx+1])
+        clusters_list[label].sites.append(filtered_sites[idx+1])
 
     # ✅ **Rearrange sites within each cluster based on the optimal path**
-    base_site = mission.sites[0]  # The base site
+    base_site = filtered_sites[0]  # The base site
 
     for cluster in clusters_list:
         if len(cluster.sites) > 1:
@@ -1166,8 +1175,9 @@ def Assign_robots_to_scenario(
     """
 
     idx = 0  # Keeps track of scenario step
-
+    
     for assignment, cluster in zip(scenario.scenario, Clusters):
+        # print("assign and cluster", assignment, cluster)
         cluster.centroid_of_sites_2d  # Ensure cluster centroid is up-to-date
         available_robots = Robots[:]  # Copy robot list (to track availability)
         
@@ -1194,7 +1204,6 @@ def Assign_robots_to_scenario(
             # ✅ Remove assigned robot from available list
             available_robots.pop(best_robot_idx)
 
-        
 
         # ✅ **Second Phase: Assign Robots to Individual Sites**
         # print("best scenario for cluster ", cluster.name, " with ", [s.name for s in cluster.sites], "  scenario: ",cluster.bestscenario[str(assignment)])
@@ -1202,17 +1211,18 @@ def Assign_robots_to_scenario(
             r.currentpathcost = 0
             r.histo = []
             r.loc = base.center
-        # print("clusterobots ", [(r.name) for r in cluster.robots], [(s.robots) for s in cluster.sites])
+        # print("cluster.robots ", [(r.name) for r in cluster.robots],"\n", "cluster.sites",[(s.name) for s in cluster.sites])
         _, clustersitescost = get_weights_of_sites(sites=cluster.sites, robots=cluster.robots)
-        # print(clustersitescost)
+        # print("clustersitecost", clustersitescost)
         cost_matrix = clustersitescost
 
-        # print(cost_matrix)
+        # print("cost_matrix",cost_matrix)
         idxsite = 0
         for sassign, site in zip(cluster.bestscenario[str(assignment)], cluster.sites):
-            
+            # print("sassign, site, listusedRgroups", sassign, site.name, listusedRgroups)
             available_robots_in_site = cluster.robots[:]  # Reuse robots assigned to the cluster
-            costactionsite = cost_matrix[idxsite][listusedRgroups.index(sassign)]
+            listusedRgroupsintern = getlistusedRgroups(available_robots_in_site)
+            costactionsite = cost_matrix[idxsite][listusedRgroupsintern.index(sassign)]
             target_location = site.center
             # print(sassign, site.name, listusedRgroups, costactionsite)
             while len(site.robots) < sassign:
@@ -1226,12 +1236,12 @@ def Assign_robots_to_scenario(
                     # print(r.name, r.loc, r.site, site.name, site.center,distance(r.loc, target_location), accumulated_cost, ": ", r.currentpathcost, travel_time, costactionsite)
                     siteassigncost.append(accumulated_cost)
 
-                # print("costactionsite,travel_time,accumulated_cost,siteassigncost,sassign, site      ",costactionsite,travel_time,accumulated_cost,siteassigncost,sassign, site.name)
+                print("costactionsite,travel_time,accumulated_cost,siteassigncost,sassign, site      ",costactionsite,travel_time,accumulated_cost,siteassigncost,sassign, site.name)
                 # ✅ Pick the **best** robot for the site
                 best_robot_idx = siteassigncost.index(min(siteassigncost))
                 best_robot = available_robots_in_site[best_robot_idx]
 
-                # print(siteassigncost, best_robot.name)
+                print(siteassigncost, best_robot.name)
                 # ✅ Assign robot **and update movement cost**
                 site.robots.append(best_robot)
                 best_robot.currentpathcost += min(siteassigncost)
@@ -1309,13 +1319,14 @@ def Assign_robots_to_scenario(
 
 
 
-def getbestassignfrommission(mission=Mission(sites=[], robots=[]), minnbofcluster=2, get_all_time=True):
+def getbestassignfrommission(mission=Mission(sites=[], robots=[]), minnbofcluster=2, get_all_time=True, replan=False):
     """ Main algorithm, Clusterize a number of sites into equal weight clusters and identify the best scenario of pre-allocation possible for a number of robots and number of sites  """ 
 
     t_alloc_full_0 = time.perf_counter()
     
     t_clustering_0 = time.perf_counter()  
     listusedRgroups = getlistusedRgroups(robots=mission.robots)
+    print(listusedRgroups)
 
     clusterslist=[]
     for numcl in range(minnbofcluster,len(mission.sites)//2 +1):
@@ -2207,7 +2218,7 @@ def get_executable_paths(STN):
     return executable_paths
 # bfs_layout
 
-def draw_STN(STN, layout='dot', impact_colors={}):
+def draw_STN(STN, layout='dot', name = "Team View", impact_colors={}):
     """
     Draws the STN as clusters for each path.
     Each path becomes a subgraph with start and end nodes and intra-duration.
@@ -2220,11 +2231,11 @@ def draw_STN(STN, layout='dot', impact_colors={}):
     """
     dot = graphviz.Digraph(format='pdf', engine=layout)
     dot.attr(rankdir='LR')
-    dot.attr(label="Structured Simple Temporal Network (STN) — Clustered View", labelloc='t', fontsize='20')
+    dot.attr(label=f"Precedence STN — Team View {name}", labelloc='t', fontsize='20')
 
     # Add the main Start and End nodes
-    dot.node("Start", "Start", shape="ellipse", style="filled", fillcolor="lightblue")
-    dot.node("End", "End", shape="ellipse", style="filled", fillcolor="lightblue")
+    dot.node("Start", "Start", shape="ellipse", style="filled", fillcolor="lightblue", fontsize='16')
+    dot.node("End", "End", shape="ellipse", style="filled", fillcolor="lightblue", fontsize='16')
 
     node_map = {}  # Maps original node name to its "Start" and "End" versions
 
@@ -2235,17 +2246,18 @@ def draw_STN(STN, layout='dot', impact_colors={}):
         data = STN.nodes[node]
         earliest = round(data.get("earliest_start", 0), 2)
         latest = round(data.get("latest_finish", 0), 2)
-        label_start = f"Start\n({earliest}s)"
-        label_end = f"End\n({latest}s)"
-
+        # label_start = f"Start\n({earliest:.0f}s)"
+        # label_end = f"End\n({latest:.0f}s)"
+        label_start = "Start"
+        label_end = "End"
         # Cluster per path with optional impact-based coloring
         cluster_color = impact_colors.get(node, "white")
 
         with dot.subgraph(name=f"cluster_{node}") as c:
-            c.attr(label=f"Path {node}", style='filled', color='black', fillcolor=cluster_color)
-            c.node(f"{node}_start", label_start, shape="ellipse", style="filled", fillcolor="lightblue")
-            c.node(f"{node}_end", label_end, shape="ellipse", style="filled", fillcolor="lightblue")
-            c.edge(f"{node}_start", f"{node}_end", label=f"[0, {latest - earliest:.2f}[", color="black")
+            c.attr(label=f"Team {node}", style='filled', color='black', fillcolor=cluster_color, fontsize='18')
+            c.node(f"{node}_start", label_start, shape="ellipse", style="filled", fillcolor="lightblue", fontsize='16')
+            c.node(f"{node}_end", label_end, shape="ellipse", style="filled", fillcolor="lightblue", fontsize='16')
+            c.edge(f"{node}_start", f"{node}_end", label=f"[{latest - earliest:.0f}, ∞[", color="black", fontsize='16')
 
         node_map[node] = (f"{node}_start", f"{node}_end")
 
@@ -2253,16 +2265,31 @@ def draw_STN(STN, layout='dot', impact_colors={}):
     for u, v in STN.edges:
         if u == "Start":
             if v in node_map:
-                dot.edge("Start", node_map[v][0], label="[0, ∞[", color="red")
+                label = STN.edges[u, v].get("label", "[0, 0[")
+                style = STN.edges[u, v].get("style", "solid")
+                color = STN.edges[u, v].get("color", "green")
+                dot.edge("Start", node_map[v][0], label=label, style=style, color=color, fontsize="14")
         elif v == "End":
+            label = STN.edges[u, v].get("label", "[0, ∞[")
+            style = STN.edges[u, v].get("style", "solid")
+            color = STN.edges[u, v].get("color", "green")
             if u in node_map:
-                dot.edge(node_map[u][1], "End", label="[0, ∞[", color="red")
+                dot.edge(node_map[u][1], "End", label=label, style=style, color=color, fontsize="14")
         elif u in node_map and v in node_map:
             # Sync handling: subtract end time of u from start time of v
             u_end = round(STN.nodes[u].get("latest_finish", 0), 2)
-            v_start = round(STN.nodes[v].get("earliest_start", 0), 2)
+            v_start = round(STN.nodes[v].get("earliest_start", 0), 2) # ∞
+            style = STN.edges[u, v].get("style", "solid")
+            color = STN.edges[u, v].get("color", "green")
+            label = STN.edges[u, v].get("label", "[0, 0[")
             duration = max(0.0, v_start - u_end)
-            dot.edge(node_map[u][1], node_map[v][0], label=f"[0, ∞[", color="red")
+            if label == "[0, 0[":
+                if duration > 0.0:
+                    label = f"[{duration:.0f}, ∞["
+                else:
+                    label = "[0, ∞["
+            # dot.edge(node_map[u][1], node_map[v][0], label=label, color="red", fontsize="14")
+            dot.edge(node_map[u][1], node_map[v][0], label=label, style=style, color=color, fontsize="14")
 
     # Render
     output_path = "/tmp/clustered_stn"
@@ -2275,113 +2302,64 @@ def draw_STN(STN, layout='dot', impact_colors={}):
     # plt.show()
 
 
-
-
 import networkx as nx
 from typing import List, Dict, Union
 
-# def build_STN(paths: List[Dict], 
-#               sequential_links: Union[List[List[str]], Dict[str, List[str]]],
-#               executed_paths: List[str] = None):
-#     """
-#     Constructs a Simple Temporal Network (STN) from paths and sequential dependencies.
-    
-#     Args:
-#         paths (List[Dict]): List of path dictionaries with keys "id", "path", "robots".
-#         sequential_links (List[List[str]] or Dict[str, List[str]]): Dependencies.
-#         executed_paths (List[str], optional): List of path IDs already executed.
-    
-#     Returns:
-#         networkx.DiGraph: Constructed STN.
-#     """
-#     STN = nx.DiGraph()
-
-#     # Normalize sequential_links into a list of tuples
-#     if isinstance(sequential_links, dict):
-#         normalized_links = []
-#         for src, dst_list in sequential_links.items():
-#             for dst in dst_list:
-#                 normalized_links.append((str(src), str(dst)))
-#     elif isinstance(sequential_links, list):
-#         normalized_links = [(str(src), str(dst)) for src, dst in sequential_links]
-#     else:
-#         raise ValueError("Unsupported type for sequential_links")
-
-#     executed_paths = set(executed_paths or [])
-
-#     # Add all paths as nodes
-#     for path_info in paths:
-#         path_id = str(path_info["id"])
-#         STN.add_node(path_id,
-#                      sites=path_info["path"],
-#                      robots=path_info["robots"],
-#                      earliest_start=0,
-#                      latest_finish=float('inf'),
-#                      execution_time=0,
-#                      executed=(path_id in executed_paths))
-
-#     # Add dependency edges
-#     for prev_path, next_path in normalized_links:
-#         STN.add_edge(prev_path, next_path, min_time_gap=0)
-
-#     # Add Start node
-#     all_path_ids = {str(p["id"]) for p in paths}
-#     successors = {dst for _, dst in normalized_links}
-#     initial_paths = all_path_ids - successors
-
-#     STN.add_node("Start", earliest_start=0, latest_finish=0, executed=True)
-#     for init_path in initial_paths:
-#         STN.add_edge("Start", init_path, min_time_gap=0)
-
-#     # Add End node
-#     predecessors = {src for src, _ in normalized_links}
-#     final_paths = all_path_ids - predecessors
-
-#     STN.add_node("End", earliest_start=float('inf'), latest_finish=float('inf'))
-#     for final_path in final_paths:
-#         STN.add_edge(final_path, "End", min_time_gap=0)
-
-#     return STN
-
-def build_STN(paths, sequential_links):
+def build_STN(paths, sequential_links, executed_paths=None):
     """
     Constructs a Simple Temporal Network (STN) from paths and sequential dependencies.
-    - Adds a "Start" node linking to all paths with no predecessors.
-    - Adds an "End" node linked from all paths with no successors.
+
+    Args:
+        paths (list of dict): Each path dict must have 'path' and 'robots'. May include optional 'id'.
+        sequential_links (list of tuple): List of (prev_path_id, next_path_id).
+        executed_paths (list of str|int]): Optional list of executed path IDs.
+
+    Returns:
+        networkx.DiGraph: The constructed STN.
     """
+    if executed_paths is None:
+        executed_paths = []
 
-    STN = nx.DiGraph()  # Directed graph for STN
+    STN = nx.DiGraph()
 
-    # Add paths as nodes
+    # Step 1: Normalize paths to ensure each has a string ID
+    path_id_map = {}  # maps index to real ID if needed
     for i, path_info in enumerate(paths):
-        STN.add_node(i, 
-                     path_id=i, 
-                     sites=path_info["path"], 
+        path_id = str(path_info["id"]) if "id" in path_info else str(i)
+        path_id_map[i] = path_id  # in case sequential_links use int indices
+        STN.add_node(path_id,
+                     path_id=path_id,
+                     sites=path_info["path"],
                      robots=path_info["robots"],
-                     earliest_start=0, 
+                     earliest_start=0,
                      latest_finish=float('inf'),
                      execution_time=0,
-                     executed=False)
+                     executed=(path_id in map(str, executed_paths)))
 
-    # Add edges (dependencies between paths)
-    for prev_path, next_path in sequential_links:
-        STN.add_edge(prev_path, next_path, min_time_gap=0)
+    # Step 2: Add edges from sequential_links
+    for prev, nxt in sequential_links:
+        prev_id = path_id_map.get(prev, str(prev))
+        next_id = path_id_map.get(nxt, str(nxt))
+        STN.add_edge(prev_id, next_id, min_time_gap=0)
 
-    # Identify Start and End Paths
-    initial_paths = {i for i in range(len(paths))} - {link[1] for link in sequential_links}
-    final_paths = {i for i in range(len(paths))} - {link[0] for link in sequential_links}
+    # Step 3: Compute initial and final paths
+    all_path_ids = set(path_id_map.values())
+    successors = {str(nxt) for _, nxt in sequential_links}
+    predecessors = {str(prev) for prev, _ in sequential_links}
+    sources = all_path_ids - successors
+    sinks = all_path_ids - predecessors
 
-    # Add Start Node
+    # Step 4: Add virtual Start/End
     STN.add_node("Start", earliest_start=0, latest_finish=0, executed=True)
-    for init_path in initial_paths:
-        STN.add_edge("Start", init_path, min_time_gap=0)
+    for s in sources:
+        STN.add_edge("Start", s, min_time_gap=0)
 
-    # Add End Node
     STN.add_node("End", earliest_start=float('inf'), latest_finish=float('inf'))
-    for final_path in final_paths:
-        STN.add_edge(final_path, "End", min_time_gap=0)
+    for s in sinks:
+        STN.add_edge(s, "End", min_time_gap=0)
 
     return STN
+
 
 def extract_paths_with_dependencies(stn):
     paths = {}  # Dictionary to store paths with assigned robots

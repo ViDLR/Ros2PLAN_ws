@@ -306,13 +306,13 @@ void STNController::triggerInitialExecutions() {
     }
 
 
-    startTeamExecution("team_0");
+    // startTeamExecution("team_4");
 
-    // for (const auto& team_name : initial_teams) {
-    //     RCLCPP_INFO(this->get_logger(), "🚀 Starting execution for team: %s", team_name.c_str());
-    //     startTeamExecution(team_name);
-    //     RCLCPP_INFO(this->get_logger(), "✅ Team [%s] started successfully.", team_name.c_str());
-    // }
+    for (const auto& team_name : initial_teams) {
+        RCLCPP_INFO(this->get_logger(), "🚀 Starting execution for team: %s", team_name.c_str());
+        startTeamExecution(team_name);
+        RCLCPP_INFO(this->get_logger(), "✅ Team [%s] started successfully.", team_name.c_str());
+    }
 }
 
 std::string STNController::extractToken(const std::string& action_string, const std::string& prefix) {

@@ -504,7 +504,8 @@
             "currentpathcost": 0,
             "poi": "cpbase",
             "site": "base",
-            "energy": 10000
+            "energy": 10000,
+            "available": true
         },
         {
             "name": "robot1",
@@ -518,7 +519,8 @@
             "currentpathcost": 0,
             "poi": "cpbase",
             "site": "base",
-            "energy": 10000
+            "energy": 10000,
+            "available": true
         },
         {
             "name": "robot2",
@@ -532,7 +534,8 @@
             "currentpathcost": 0,
             "poi": "cpbase",
             "site": "base",
-            "energy": 10000
+            "energy": 10000,
+            "available": true
         },
         {
             "name": "robot3",
@@ -546,7 +549,8 @@
             "currentpathcost": 0,
             "poi": "cpbase",
             "site": "base",
-            "energy": 10000
+            "energy": 10000,
+            "available": true
         },
         {
             "name": "robot4",
@@ -560,7 +564,8 @@
             "currentpathcost": 0,
             "poi": "cpbase",
             "site": "base",
-            "energy": 10000
+            "energy": 10000,
+            "available": true
         },
         {
             "name": "robot5",
@@ -574,7 +579,8 @@
             "currentpathcost": 0,
             "poi": "cpbase",
             "site": "base",
-            "energy": 10000
+            "energy": 10000,
+            "available": true
         },
         {
             "name": "robot6",
@@ -588,7 +594,8 @@
             "currentpathcost": 0,
             "poi": "cpbase",
             "site": "base",
-            "energy": 10000
+            "energy": 10000,
+            "available": true
         }
     ],
     "objective": "assess",

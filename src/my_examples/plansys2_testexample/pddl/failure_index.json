@@ -14,13 +14,22 @@
         "1": "create_new_poi_sp_type",
         "2": "create_new_poi obs_type"
     },
-    "switch_airtowater": {
+    "observe": {
+        "0": "robot_unavailable",
+	"1": "Unswitchable points observed: []"
+    },
+    "observe_2r": {
+        "0": "first robot_unavailable",
+        "1": "second robot_unavailable",
+	"2": "Unswitchable points observed: []"
+    },
+    "switch_airwater": {
         "0": "robot_unavailable",
         "1": "robot_cannot_switch robot_waterconf",
 	"2": "robot_cannot_switch robot_airconf",
         "3": "point_unswitchable"
     },
-    "switch_watertoair": {
+    "switch_waterair": {
         "0": "robot_unavailable",
         "1": "robot_cannot_switch robot_airconf",
         "2": "robot_cannot_switch robot_waterconf",

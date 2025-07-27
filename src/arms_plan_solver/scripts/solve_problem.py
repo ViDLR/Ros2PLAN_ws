@@ -13,31 +13,66 @@ import networkx as nx
 import matplotlib.patches as mpatches
 import json
 import tempfile
+import copy
 
-# Dynamically add the directory to the Python path
-# Define the output paths dynamically
-base_output_dir = Path("/tmp/plan_output/")
-base_output_dir_str ="/tmp/plan_output/"
-validation_output_dir = "/tmp/validation/"
-subproblems_dir = base_output_dir / "subproblems"
+def export_networkx_stn(nx_graph):
+    nodes = {}
+    edges = []
+    clusters = {}
 
-# Ensure the directories exist
-subproblems_dir.mkdir(parents=True, exist_ok=True)
+    for node, data in nx_graph.nodes(data=True):
+        nodes[node] = data
+        cluster = data.get("cluster")
+        if cluster:
+            clusters.setdefault(cluster, []).append(node)
 
-script_dir = os.path.dirname(__file__)  # Get the directory where the script is located
-parent_dir = os.path.dirname(script_dir)  # Navigate to the parent directory if needed
-external_solver_dir = os.path.join(get_package_prefix("arms_plan_solver"), "lib", "arms_plan_solver", "external_solver")
-optic_cplex_path = os.path.join(external_solver_dir, "optic-cplex")
-sys.path.append(parent_dir)  # Add the parent directory to sys.path
-sys.path.append(script_dir + "/functions")
+    for src, dst, data in nx_graph.edges(data=True):
+        edges.append({
+            "src": src,
+            "dst": dst,
+            "label": data.get("label", "")
+        })
 
-import arms_utils.Class_and_functions as Class_and_functions  # Import ARMS Toolbox functions  # Import ARMS Toolbox functions
+    print("🧠 Nodes:")
+    for node_id, attr in nodes.items():
+        print(f"  {node_id}: {attr}")
+
+    print("\n🔗 Edges:")
+    for e in edges:
+        print(f"  {e['src']} -> {e['dst']} [label=\"{e['label']}\"]")
+
+    print("\n📦 Clusters:")
+    for cluster_name, node_list in clusters.items():
+        print(f"  {cluster_name}: {node_list}")
+
+    return {"nodes": nodes, "edges": edges, "clusters": clusters}
+
 
 #  Parameters for planning
 domain_file = sys.argv[1]
 problem_file = sys.argv[2]
 min_nb_cluster = int(sys.argv[3])
 validation_report_path = sys.argv[4] if len(sys.argv) > 4 else "" 
+# Optional output override
+if len(sys.argv) > 5 and sys.argv[5]:
+    base_output_dir = Path(sys.argv[5])
+else:
+    base_output_dir = Path("/tmp/plan_output/")
+
+base_output_dir_str = str(base_output_dir)
+
+# Define the output paths dynamically
+subproblems_dir = base_output_dir / "subproblems"
+script_dir = os.path.dirname(__file__)  # Get the directory where the script is located
+parent_dir = os.path.dirname(script_dir)  # Navigate to the parent directory if needed
+external_solver_dir = os.path.join(get_package_prefix("arms_plan_solver"), "lib", "arms_plan_solver", "external_solver")
+optic_cplex_path = os.path.join(external_solver_dir, "optic-cplex")
+sys.path.append(parent_dir)  # Add the parent directory to sys.path
+sys.path.append(script_dir + "/functions")
+# Ensure the directories exist
+subproblems_dir.mkdir(parents=True, exist_ok=True)
+
+import arms_utils.Class_and_functions as Class_and_functions  # Import ARMS Toolbox functions  # Import ARMS Toolbox functions
 
 # print(validation_report_path)
 
@@ -84,12 +119,13 @@ def main():
     """
 
     # Load mission
-    mission = Class_and_functions.recover_mission_from_json("/tmp/world_info.json")
+    # mission = Class_and_functions.recover_mission_from_json("/tmp/world_info.json")
+    mission = Class_and_functions.getdataclassfrompddl(problem_file)
 
-    robot_states = {
-    r.name: {"site": "base", "position": "cpbase", "conf": "groundconf", "loc": mission.sites[0].center, "time": 0}
-    for r in mission.robots
-    }  # Store last known state of each robot globally
+    # robot_states = {
+    # r.name: {"site": "base", "position": "cpbase", "conf": "groundconf", "loc": mission.sites[0].center, "time": 0}
+    # for r in mission.robots
+    # }  # Store last known state of each robot globally
 
     executed_paths = []
     new_unique_paths = []
@@ -99,86 +135,162 @@ def main():
         print(f"📄 Using validation report: {validation_report_path}")
         with open(validation_report_path) as f:
             report = json.load(f)
+        if report.get("replan_required", True):
+            print("🔁 Replan required according to validation report. Re-running ARMS on failed_problem.pddl")
 
-        # Extract relevant report fields
-        best_alloc = report["best_alloc"]
-        arms_paths = report["arms_paths"]
-        parsed_plan = report.get("parsed_plan", [])
-        path_viability = report.get("path_viability", {})
-        fixed_paths = [str(pid) for pid in report.get("fixed_paths", [])]
-        sequential_links = {
-            str(k): [str(x) for x in v]
-            for k, v in report.get("sequential_links", {}).items()
-        }
+            # Reconstruct mission state from failed_problem.pddl (ARMS input)
+            failed_problem_path = "/tmp/validation/failed_problem.pddl"
+            mission = Class_and_functions.getdataclassfrompddl(failed_problem_path)
+            robots = copy.deepcopy(mission.robots)
 
-        # Determine executed paths (fixed + unaffected)
-        unaffected_paths = [
-            pid for pid, data in path_viability.items()
-            if data.get("status") == "unaffected" and data.get("valid")
-        ]
-        executed_paths = list(set(fixed_paths + unaffected_paths))
-        print(f"🟢 Executed paths (fixed + unaffected): {executed_paths}")
+            t_alloc_full_0 = time.perf_counter()
 
-        # Build unique path structures
-        new_unique_paths = [{
-            "id": str(p["id"]),
-            "path": p["path"],
-            "robots": p["robots"]
-        } for p in arms_paths]
+            clusters, allocationscenario = Class_and_functions.getbestassignfrommission(mission=mission, minnbofcluster=1)
 
-        print("\nRecovered unique paths from report:")
-        for p in new_unique_paths:
-            print(f"Path ID: {p['id']} | Sites: {p['path']} | Robots: {p['robots']}")
 
-        # Identify robots involved in fixed paths
-        fixed_robots = set()
-        for p in new_unique_paths:
-            if p["id"] in fixed_paths:
-                fixed_robots.update(p["robots"])
+            # Build robot-to-path mapping from updated mission
+            robotpath = defaultdict(list)
+            for r in robots:
+                path_tuple = tuple(r.histo)
+                robotpath[path_tuple].append(r.name)
 
-        # Extract all robots mentioned in the parsed plan
-        robots_in_plan = {robot for a in parsed_plan for robot in a["robots"]}
+            unique_paths_with_robots = [{'path': list(path), 'robots': robots} for path, robots in robotpath.items()]
+            new_unique_paths = Class_and_functions.split_redundant_paths(unique_paths_with_robots, mission)
+            # DEBUG CASE 3
+            new_unique_paths = [
+                {'path': ['site3', 'site5'], 'robots': ['robot0', 'robot4']},
+                {'path': ['site7'], 'robots': ['robot5', 'robot6']},
+                {'path': ['site2', 'site6'], 'robots': ['robot2', 'robot5', 'robot6']}
+            ]
 
-        # Initialize robot_state for all robots in the plan
-        robot_state = {
-            r: {
-                "position": None,
-                "conf": None,
-                "time": 0.0,
-                "site": None,
-                "loc": None
-            } for r in robots_in_plan
-        }
+            for i, path_info in enumerate(new_unique_paths):
+                print("rawpath {}: ".format(str(i)), path_info['path'], "robots: ", path_info['robots'])
 
-        # Dump parsed_plan into a temp file to reuse p_plan()
-        with tempfile.NamedTemporaryFile(mode='w+', delete=False) as tmp_plan_file:
-            for a in parsed_plan:
-                action_line = f"{a['start_time']:.3f}: {a['full_action']} [{a['duration']:.3f}]\n"
-                tmp_plan_file.write(action_line)
-            tmp_plan_path = tmp_plan_file.name
+            # sequential_links = Class_and_functions.find_sequential_links(new_unique_paths, mission)
+            sequential_links = [(1, 2)] 
 
-        # Call p_plan to update robot_state from the parsed plan
-        robot_state, max_time, robot_exec_times = Class_and_functions.p_plan(
-            tmp_plan_path, robot_state, mission
-        )
+            for r in robots:
+                robot_states[r.name] = {
+                    "site": r.site,
+                    "loc": r.loc,
+                    "position": r.poi,
+                    "conf": "waterconf" if r.medium ==-1 else "airconf",
+                    "time": 792.16
+                }
 
-        # Filter to keep only states of robots from fixed paths
-        robot_state = {r: s for r, s in robot_state.items() if r in fixed_robots}
+            active_robot_names = {r.name for r in robots}
 
-        print("\n🗺️ Reconstructed robot states after fixed paths (via p_plan):")
-        for r, s in robot_state.items():
-            print(f"{r}: pos={s['position']} | conf={s['conf']} | site={s['site']} | loc={s['loc']} | t={s['time']:.1f}")
+            # Step 2: Remove robots not in that list
+            for name in list(robot_states.keys()):
+                if name not in active_robot_names:
+                    del robot_states[name]
 
-        stn = Class_and_functions.build_STN(
-            new_unique_paths,
-            sequential_links,
-            executed_paths=executed_paths
-        )
+            print(robot_states)
+
+            stn = Class_and_functions.build_STN(
+                new_unique_paths,
+                sequential_links,
+            )
+
+            # ✅ Then return or continue below normally (skip report reloading part)
+            executed_paths = []
+        else:
+            # Extract relevant report fields
+            best_alloc = report["best_alloc"]
+            arms_paths = report["arms_paths"]
+            path_viability = report.get("path_viability", {})
+            fixed_paths = [str(pid) for pid in report.get("fixed_paths", [])]
+            sequential_links_dict = report.get("sequential_links", {})
+            sequential_links = [
+                (pred, dep)
+                for dep, preds in sequential_links_dict.items()
+                for pred in preds
+            ]
+
+            
+            valid_path_ids = {str(p["id"]) for p in arms_paths}
+
+            # Determine executed paths (fixed + unaffected)
+            unaffected_paths = [
+                pid for pid, data in path_viability.items()
+                if pid in valid_path_ids and data.get("status") == "unaffected" and data.get("valid")
+            ]
+
+            executed_paths = list(set(fixed_paths + unaffected_paths))
+            print(f"🟢 Executed paths (fixed + unaffected): {executed_paths}")
+
+            # Build unique path structures
+            new_unique_paths = [{
+                "id": str(p["id"]),
+                "path": p["path"],
+                "robots": p["robots"]
+            } for p in arms_paths]
+
+            print("\nRecovered unique paths from report:")
+            for p in new_unique_paths:
+                print(f"rawpath {p['id']}: {p['path']} robots: {p['robots']}")
+
+            print("sequential_links: ", sequential_links, "\n")
+
+            # Identify robots involved in executed (fixed + unaffected) paths
+            executed_robots = set()
+            for p in new_unique_paths:
+                if p["id"] in executed_paths:
+                    executed_robots.update(p["robots"])
+
+            t_alloc_full_0 = time.perf_counter()
+
+            # Phase 1: update robot_states using merged plan files for fixed paths
+            for path_id in fixed_paths:
+                plan_file_path = f"/tmp/plan_output/subproblems/PATH_{path_id}_mergedPLAN.txt"
+
+                if not os.path.exists(plan_file_path):
+                    print(f"⚠️ Skipping {path_id}: Plan file not found at {plan_file_path}")
+                    continue
+
+                print(f"🔍 Processing merged plan for path {path_id}: {plan_file_path}")
+
+                # Update the robot_states dictionary in-place
+                robot_states, _, _ = Class_and_functions.p_plan(plan_file_path, robot_states, mission)
+
+                # for r in best_alloc[str(path_id)]:
+                #     print(f"🆙 Robot {r} after plan parse: {robot_states[r]}")
+
+            # Phase 2 (clean): Only update the robots in report["failed_robots"] using world_info
+            with open("/tmp/world_info.json") as f:
+                world_info = json.load(f)
+
+            failed_robots = report.get("failed_robots", [])
+
+            for r in failed_robots:
+                matching_robot = next((rob for rob in world_info["robots"] if rob["name"] == r), None)
+                if matching_robot:
+                    print(f"🌍 Overriding state for failed robot {r} using world_info")
+                    robot_states[r] = {
+                        "site": matching_robot["site"],
+                        "loc": matching_robot["loc"],
+                        "position": matching_robot["poi"],
+                        "conf": "waterconf" if matching_robot["medium"] == -1 else "airconf",
+                        "time": 397.294
+                    }
+
+
+            # # Final print
+            # print("\n📦 Final reconstructed robot states (merged plan + world fallback):")
+            # for r, s in robot_states.items():
+            #     print(f"{r}: pos={s['position']} | conf={s['conf']} | site={s['site']} | loc={s['loc']} | t={s['time']:.1f}")
+
+            stn = Class_and_functions.build_STN(
+                new_unique_paths,
+                sequential_links,
+                executed_paths=executed_paths
+            )
 
     else:
         print("🆕 No validation report provided → running full mission planning")
-        
-        clusters, allocationscenario = Class_and_functions.getbestassignfrommission(mission=mission, minnbofcluster=min_nb_cluster)
+        # We establish the best assignement for this mission with IROS2024 solution
+        print("NB SITES: ",len(mission.sites[1::]),",NB ROBOTS: ", len(mission.robots),",NB OBJECTIVES: ",sum([len(s.poi) for s in mission.sites[1::]])-len(mission.sites[1::]), "MIN NB CLUSTER: ",min_nb_cluster)
+        clusters, allocationscenario = Class_and_functions.getbestassignfrommission(mission=mission,minnbofcluster=min_nb_cluster)
 
         print("Clusters:")
         for c in clusters:
@@ -186,24 +298,46 @@ def main():
             for s in c.sites:
                 print(s.name)
             print("\n")
-
-        # Assign robots to unique path groups
+            
+        # Dictionary to store the paths and their corresponding robots
         robotpath = defaultdict(list)
         print("Robot assignment:")
         for r in mission.robots:
             print(r.name, "assigned to", r.histo)
-            path_tuple = tuple(r.histo)
+            path_tuple = tuple(r.histo)  # Convert list to tuple to use as a dict key
+            # Append the robot name to the path key in robotpath dictionary
             robotpath[path_tuple].append(r.name)
 
-        # Generate unique paths and extract links
+        # Now format the results into a list that includes each unique path with its robots
         unique_paths_with_robots = [{'path': list(path), 'robots': robots} for path, robots in robotpath.items()]
+
+        # We split redundant paths into severals
         new_unique_paths = Class_and_functions.split_redundant_paths(unique_paths_with_robots, mission)
-        sequential_links = Class_and_functions.find_sequential_links(new_unique_paths, mission)
+
+        print("\n")
+        # print("Unique paths in plan:")
+        for i, path_info in enumerate(new_unique_paths):
+            print("rawpath {}: ".format(i),path_info['path'], "robots: ",path_info['robots'])
+
+        t_alloc_full_0 = time.perf_counter()
+
+        # Following the robots assignements in the unique paths we can find the sequential links between paths
+        sequential_links = Class_and_functions.find_sequential_links(new_unique_paths, mission) 
+        print("sequential_links: ", sequential_links, "\n")
+
+        robot_states = {
+            r.name: {"site": "base", "position": "cpbase", "conf": "groundconf", "loc": mission.sites[0].center, "time": 0}
+            for r in mission.robots
+        }  # Store last known state of each robot globally
 
         stn = Class_and_functions.build_STN(
             new_unique_paths,
             sequential_links,
         )
+        # print(export_networkx_stn(stn))
+        # Class_and_functions.draw_STN(stn)
+        # Class_and_functions.extract_paths_with_dependencies(stn)
+
 
     
     # DRAWING OF GRAPH FOR THE ARMS OUPUT
@@ -275,20 +409,23 @@ def main():
     # print("THE ROBOT STATES", robot_states, "\n")
     
 
-    Class_and_functions.draw_STN(stn, impact_colors={0: "lightcoral", "sync_0_a": "orange"})
+    # Class_and_functions.draw_STN(stn)
 
-    while not all(stn.nodes[p]["executed"] for p in stn.nodes if p not in ["Start", "End"]):  # Excluding "Start" and "End" nodes
+    t_STN_0 = time.perf_counter()
+    
+
+    while not all(stn.nodes[str(p)]["executed"] for p in stn.nodes if p not in ["Start", "End"]):  # Excluding "Start" and "End" nodes
         executable_paths = Class_and_functions.get_executable_paths(stn)
+        # print(executable_paths)
 
         for path_idx in executable_paths:
             print("Solving path : ", path_idx)
             sync_created = False
-            path_info = stn.nodes[path_idx]
+            path_info = stn.nodes[str(path_idx)]
             pathplan = []
             path = path_info["sites"]
             robots = path_info["robots"]
-
-            if "End" in stn.successors(path_idx) and mission.sites[0].name not in path:
+            if "End" in stn.successors(str(path_idx)) and mission.sites[0].name not in path:
                 path.append(mission.sites[0].name)
 
             # print(f"\n🚀 Executing path {path_idx}: {path} with robots {robots}")
@@ -298,7 +435,7 @@ def main():
             previous_robotstate = {r: dict(robot_states[r]) for r in robots}
 
             # **Step 1: Handle Multi-Predecessor Synchronization (Dynamic "Goto" Paths)**
-            predecessors = list(stn.predecessors(path_idx))
+            predecessors = list(stn.predecessors(str(path_idx)))
             site_obj = next((s for s in mission.sites if s.name == path[0]), None)
 
             # === STEP 1: Synchronization (Multi-predecessor case) loop ===
@@ -308,12 +445,12 @@ def main():
                 arrival_times = {}
 
                 for p in predecessors:
-                    for robot in stn.nodes[p]["robots"]:
+                    for robot in stn.nodes[str(p)]["robots"]:
                         if robot in robots:  # ✅ Only consider robots assigned to path_idx
                             # travel_time = Class_and_functions.distance(robot_states[robot]["loc"], site_obj.center) / 1.5
                             travel_time[robot] = Class_and_functions.distance(robot_states[robot]["loc"], site_obj.center) / 1.5
-                            finishing_times[robot] = stn.nodes[p]["latest_finish"]
-                            arrival_times[robot] = stn.nodes[p]["latest_finish"] + travel_time[robot]
+                            finishing_times[robot] = stn.nodes[str(p)]["latest_finish"]
+                            arrival_times[robot] = stn.nodes[str(p)]["latest_finish"] + travel_time[robot]
 
                 # print(travel_time, finishing_times,arrival_times)            
                 # **No Sync Path Scenario**: Comparison of max and min finishing time
@@ -331,7 +468,7 @@ def main():
                         new_arrival_times = finishing_times.copy()  # Start with finish times (no travel yet)
 
                         for p in combination:
-                            for robot in stn.nodes[p]["robots"]:
+                            for robot in stn.nodes[str(p)]["robots"]:
                                 if robot in robots:  # ✅ Only assigned robots matter
                                     new_arrival_times[robot] += travel_time[robot]  # Travel only for sync path robots
 
@@ -358,7 +495,7 @@ def main():
                 # Step 3: Group Robots by Predecessor Path
                 robots_by_predecessor = {}  # Dictionary to store robots per predecessor
                 for p in sync_predecessors:
-                    sync_robots = [robot for robot in stn.nodes[p]["robots"] if robot in robots]  # Only assigned robots
+                    sync_robots = [robot for robot in stn.nodes[str(p)]["robots"] if robot in robots]  # Only assigned robots
                     if sync_robots:
                         robots_by_predecessor[p] = sync_robots
 
@@ -384,13 +521,13 @@ def main():
                     )
 
                     # Adjust STN edges
-                    stn.remove_edge(p, path_idx)  # Remove direct link
+                    stn.remove_edge(str(p), path_idx)  # Remove direct link
 
                     # Add sync transition: travel only
                     sync_duration = round(latest_finish - earliest_start, 2)
                     travel_only = round(earliest_start - finishing_times[sync_robots[0]], 2)  # Could average if you prefer
 
-                    stn.add_edge(p, sync_path_id, min_time_gap=travel_only)
+                    stn.add_edge(str(p), sync_path_id, min_time_gap=travel_only)
                     stn.add_edge(sync_path_id, path_idx, min_time_gap=0)  # Sync ends right before next path starts
 
 
@@ -411,11 +548,8 @@ def main():
                     goal_type = "goto"
                 else:
                     goal_type = "solving"
-
                 # Generate problem
-                # print(robot_state)
                 prblm_path = Class_and_functions.GenerateAdaptedProblem(mission, problem_file, robot_state, path[i], goal_type)
-                # print(prblm_path)
                 # Solve the problem
                 try:
                     Planner_command = "timeout -v 1m {2} -N {0} {1}.pddl".format(domain_file, prblm_path, optic_cplex_path)
@@ -435,7 +569,7 @@ def main():
                 previous_exec_time = max(robot_state[r]["time"] for r in robot_state)
                 # Update robot state
                 robot_state, plan_end_time, _ = Class_and_functions.p_plan(f"{prblm_path}_PLAN.txt", robot_state, mission)
-
+                # print(robot_state, plan_end_time)
                 max_execution_time = plan_end_time +  previous_exec_time
                 for r in robot_state:
                     robot_state[r]["time"] =max_execution_time
@@ -476,7 +610,7 @@ def main():
                 path1 = path[:split_index]
                 path2 = path[split_index:]
 
-                stn.nodes[path_idx]["sites"] = path1
+                stn.nodes[str(path_idx)]["sites"] = path1
 
                 sync_path_id = f"sync_{path_idx}_a"
                 stn.add_node(
@@ -489,19 +623,19 @@ def main():
                     executed=False
                 )
 
-                for succ in list(stn.successors(path_idx)):
-                    edge_data = stn.get_edge_data(path_idx, succ)
-                    stn.remove_edge(path_idx, succ)
+                for succ in list(stn.successors(str(path_idx))):
+                    edge_data = stn.get_edge_data(str(path_idx), succ)
+                    stn.remove_edge(str(path_idx), succ)
                     stn.add_edge(sync_path_id, succ, **edge_data)
 
-                stn.add_edge(path_idx, sync_path_id, min_time_gap=stn.nodes[path_idx]["execution_time"])
+                stn.add_edge(str(path_idx), sync_path_id, min_time_gap=stn.nodes[str(path_idx)]["execution_time"])
 
-                print(f"📎 Splitting after execution: Path {path_idx} had {plan_lines} actions")
-                print(f"    🔹 {path1} (ID: {path_idx})")
-                print(f"    🔹 {path2} (ID: {sync_path_id})")
+                # print(f"📎 Splitting after execution: Path {path_idx} had {plan_lines} actions")
+                # print(f"    🔹 {path1} (ID: {path_idx})")
+                # print(f"    🔹 {path2} (ID: {sync_path_id})")
 
                 # ✅ Rewind robot state based on path1 execution
-                print("🔁 Recomputing robot state for split path (only path1 executed)")
+                # print("🔁 Recomputing robot state for split path (only path1 executed)")
 
                 temp_robot_state = {r: dict(robot_states[r]) for r in robots}
                 split_robot_state = {r: dict(temp_robot_state[r]) for r in temp_robot_state}
@@ -535,11 +669,16 @@ def main():
                 # **Mark the Node as Executed Instead of Removing It**
                 for robot in robots:
                     robot_states[robot] = robot_state[robot]  # Save robot's latest known state
-                stn.nodes[path_idx]["executed"] = True
-
-    Class_and_functions.draw_STN(stn, impact_colors={3:"orange",0: "lightcoral", "sync_0_a": "orange"})
-    t_alloc_full_1 = time.perf_counter()
+                stn.nodes[str(path_idx)]["executed"] = True
+    
+    # print(export_networkx_stn(stn))
+    # Class_and_functions.draw_STN(stn, impact_colors={"0":"lightcoral", "sync_0_a":"coral", "3":"coral"})
+    # Class_and_functions.draw_STN(stn)
+    t_STN_1 = time.perf_counter()
+    print("STN creation and PDDL solving time:", t_STN_1-t_STN_0)
+    
     Class_and_functions.extract_paths_with_dependencies(stn)
-    # print(t_alloc_full_1-t_alloc_full_0)
+    t_alloc_full_1 = time.perf_counter()
+    print("full time pre-alloc:",t_alloc_full_1-t_alloc_full_0)
 if __name__ == '__main__':
     main()
