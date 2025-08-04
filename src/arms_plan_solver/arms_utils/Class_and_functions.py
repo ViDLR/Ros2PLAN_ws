@@ -1165,101 +1165,110 @@ def getbestassignforclusterandR(num_robots=0, costsites=np.array([]),listusedRgr
     # print("LE OPTIMAL", optimal_scenario.scenario, optimal_scenario.totalcost, [s.name for s in cluster], num_robots)
     return optimal_scenario
            
+
 def Assign_robots_to_scenario(
-    scenario, Robots=[], Clusters=[], costsites=[], listusedRgroups=[], base=Site(poi=[], robots=[])
+    scenario, Robots=[], Clusters=[], costsites=[], listusedRgroups=[], base=Site(poi=[], robots=[]), starting_states=None
 ):
     """ 
     Assign robots optimally to a given scenario of cluster and site allocations. 
     - Ensures efficient workload distribution.
     - Prioritizes minimizing makespan.
+    - Uses per-robot starting state if provided and updates it after each cluster (post site allocation).
     """
 
     idx = 0  # Keeps track of scenario step
-    
+
+    # ✅ Initialize robot state from saved starting states if provided
+    for r in Robots:
+        if starting_states and r.name in starting_states:
+            r.loc = starting_states[r.name]["loc"]
+            r.currentpathcost = starting_states[r.name]["cost"]
+            r.histo = starting_states[r.name].get("histo", [])
+        else:
+            r.currentpathcost = 0
+            r.loc = base.center
+            r.histo = []
+
     for assignment, cluster in zip(scenario.scenario, Clusters):
-        # print("assign and cluster", assignment, cluster)
-        cluster.centroid_of_sites_2d  # Ensure cluster centroid is up-to-date
-        available_robots = Robots[:]  # Copy robot list (to track availability)
-        
-        # ✅ Retrieve the **precomputed** cost estimation
+        cluster.centroid_of_sites_2d  # Trigger centroid update (if needed)
+        available_robots = Robots[:]  # Copy full robot list (global availability)
+
+        # ✅ Retrieve the precomputed cost estimation for this cluster assignment
         costaction = scenario.costmatrix[idx][listusedRgroups.index(assignment)]
 
-        # ✅ Assign robots **to clusters first**
+        # ✅ Assign robots to the cluster (greedy based on accumulated cost)
         while len(cluster.robots) < assignment:
-            
             assigncost = [
                 costaction + r.currentpathcost + distance(r.loc, cluster.sites[0].center) / 1.5
                 for r in available_robots
             ]
-
-            # ✅ Pick the **best** robot (one with **minimum cost accumulation**)
             best_robot_idx = assigncost.index(min(assigncost))
             best_robot = available_robots[best_robot_idx]
 
-            # ✅ Assign robot to the cluster
-            cluster.robots.append(available_robots[best_robot_idx])
-            available_robots[best_robot_idx].currentpathcost += min(assigncost)  # 🔥 Accumulate **real execution cost**
-            available_robots[best_robot_idx].loc = cluster.sites[0].center  # Move robot to first site in cluster
+            cluster.robots.append(best_robot)
 
-            # ✅ Remove assigned robot from available list
+            # 🔒 Temporarily do NOT update robot state (cost/loc) here
             available_robots.pop(best_robot_idx)
 
-
-        # ✅ **Second Phase: Assign Robots to Individual Sites**
-        # print("best scenario for cluster ", cluster.name, " with ", [s.name for s in cluster.sites], "  scenario: ",cluster.bestscenario[str(assignment)])
+        # ✅ Reset robot state before site allocation using starting_states snapshot
         for r in cluster.robots:
-            r.currentpathcost = 0
-            r.histo = []
-            r.loc = base.center
-        # print("cluster.robots ", [(r.name) for r in cluster.robots],"\n", "cluster.sites",[(s.name) for s in cluster.sites])
+            if starting_states and r.name in starting_states:
+                r.loc = starting_states[r.name]["loc"]
+                r.currentpathcost = starting_states[r.name]["cost"]
+                r.histo = starting_states[r.name].get("histo", [])
+            else:
+                r.currentpathcost = 0
+                r.loc = base.center
+                r.histo = []
+
+        # ✅ Assign robots to each site in the cluster (site-level allocation)
         _, clustersitescost = get_weights_of_sites(sites=cluster.sites, robots=cluster.robots)
-        # print("clustersitecost", clustersitescost)
         cost_matrix = clustersitescost
 
-        # print("cost_matrix",cost_matrix)
         idxsite = 0
         for sassign, site in zip(cluster.bestscenario[str(assignment)], cluster.sites):
-            # print("sassign, site, listusedRgroups", sassign, site.name, listusedRgroups)
-            available_robots_in_site = cluster.robots[:]  # Reuse robots assigned to the cluster
+            # print(sassign, site.name)
+            available_robots_in_site = cluster.robots[:]
             listusedRgroupsintern = getlistusedRgroups(available_robots_in_site)
             costactionsite = cost_matrix[idxsite][listusedRgroupsintern.index(sassign)]
             target_location = site.center
-            # print(sassign, site.name, listusedRgroups, costactionsite)
+
             while len(site.robots) < sassign:
-                
                 siteassigncost = []
                 for r in available_robots_in_site:
-                    
-                    # ✅ **Assign robots based on travel distance to the site**
                     travel_time = round(distance(r.loc, target_location) / 1.5, 2)
                     accumulated_cost = costactionsite + r.currentpathcost + travel_time
-                    # print(r.name, r.loc, r.site, site.name, site.center,distance(r.loc, target_location), accumulated_cost, ": ", r.currentpathcost, travel_time, costactionsite)
                     siteassigncost.append(accumulated_cost)
+                    # print(r.name, accumulated_cost, r.currentpathcost, travel_time)
 
-                print("costactionsite,travel_time,accumulated_cost,siteassigncost,sassign, site      ",costactionsite,travel_time,accumulated_cost,siteassigncost,sassign, site.name)
-                # ✅ Pick the **best** robot for the site
                 best_robot_idx = siteassigncost.index(min(siteassigncost))
                 best_robot = available_robots_in_site[best_robot_idx]
 
-                print(siteassigncost, best_robot.name)
-                # ✅ Assign robot **and update movement cost**
                 site.robots.append(best_robot)
-                best_robot.currentpathcost += min(siteassigncost)
+                best_robot.currentpathcost += siteassigncost[best_robot_idx]
                 best_robot.loc = site.center
                 best_robot.histo.append(site.name)
                 best_robot.site = site.name
 
-                # ✅ Remove from available site-level list
-                available_robots_in_site.remove(available_robots_in_site[best_robot_idx])
+                available_robots_in_site.pop(best_robot_idx)
 
+            # Optional: equalize cost across site robots
+            max_cost = max(r.currentpathcost for r in site.robots)
             for r in site.robots:
-                r.currentpathcost = max([r.currentpathcost for r in site.robots])
+                r.currentpathcost = max_cost
 
             idxsite += 1
-        idx += 1  # Move to next step
 
-    return scenario  # ✅ Return the scenario with assigned robots
+        # ✅ Update starting states AFTER site allocation to reflect full updated state
+        if starting_states:
+            for r in cluster.robots:
+                starting_states[r.name]["loc"] = r.loc
+                starting_states[r.name]["cost"] = r.currentpathcost
+                starting_states[r.name]["histo"] = r.histo[:]
 
+        idx += 1
+
+    return scenario
 
 
 
@@ -1323,7 +1332,14 @@ def getbestassignfrommission(mission=Mission(sites=[], robots=[]), minnbofcluste
     """ Main algorithm, Clusterize a number of sites into equal weight clusters and identify the best scenario of pre-allocation possible for a number of robots and number of sites  """ 
 
     t_alloc_full_0 = time.perf_counter()
-    
+    starting_states = {
+        r.name: {
+            "loc": r.loc,
+            "cost": r.currentpathcost,
+            "histo": r.histo[:]  # deep copy of visited history if needed
+        }
+        for r in mission.robots
+    }
     t_clustering_0 = time.perf_counter()  
     listusedRgroups = getlistusedRgroups(robots=mission.robots)
     print(listusedRgroups)
@@ -1391,7 +1407,7 @@ def getbestassignfrommission(mission=Mission(sites=[], robots=[]), minnbofcluste
     
     t_assignrob_0 = time.perf_counter()
     # print("BAH VOYONS: ", scenarioC[costC.index(min(costC))])
-    Assign_robots_to_scenario(scenario=scenarioC[costC.index(min(costC))], Robots=mission.robots,Clusters=clusters, listusedRgroups=listusedRgroups, base=mission.sites[0])
+    Assign_robots_to_scenario(scenario=scenarioC[costC.index(min(costC))], Robots=mission.robots,Clusters=clusters, listusedRgroups=listusedRgroups, base=mission.sites[0], starting_states=starting_states)
     t_assignrob_1 = time.perf_counter()
 
     allocationscenario = scenarioC[costC.index(min(costC))]
@@ -2250,11 +2266,13 @@ def draw_STN(STN, layout='dot', name = "Team View", impact_colors={}):
         # label_end = f"End\n({latest:.0f}s)"
         label_start = "Start"
         label_end = "End"
+        robots = STN.nodes[node].get("robots", "[]")
+        robot_short = [r.replace("robot", "r") for r in robots]
         # Cluster per path with optional impact-based coloring
         cluster_color = impact_colors.get(node, "white")
 
         with dot.subgraph(name=f"cluster_{node}") as c:
-            c.attr(label=f"Team {node}", style='filled', color='black', fillcolor=cluster_color, fontsize='18')
+            c.attr(label = f"Team {node} - {', '.join(robot_short)}", style='filled', color='black', fillcolor=cluster_color, fontsize='18')
             c.node(f"{node}_start", label_start, shape="ellipse", style="filled", fillcolor="lightblue", fontsize='16')
             c.node(f"{node}_end", label_end, shape="ellipse", style="filled", fillcolor="lightblue", fontsize='16')
             c.edge(f"{node}_start", f"{node}_end", label=f"[{latest - earliest:.0f}, ∞[", color="black", fontsize='16')
@@ -2267,21 +2285,24 @@ def draw_STN(STN, layout='dot', name = "Team View", impact_colors={}):
             if v in node_map:
                 label = STN.edges[u, v].get("label", "[0, 0[")
                 style = STN.edges[u, v].get("style", "solid")
-                color = STN.edges[u, v].get("color", "green")
-                dot.edge("Start", node_map[v][0], label=label, style=style, color=color, fontsize="14")
+                color = STN.edges[u, v].get("color", "black")
+                fontcolor = STN.edges[u, v].get("labelcolor", color)
+                dot.edge("Start", node_map[v][0], label=label, style=style, color=color, fontcolor=fontcolor, fontsize="14")
         elif v == "End":
             label = STN.edges[u, v].get("label", "[0, ∞[")
             style = STN.edges[u, v].get("style", "solid")
-            color = STN.edges[u, v].get("color", "green")
+            color = STN.edges[u, v].get("color", "black")
+            fontcolor = STN.edges[u, v].get("labelcolor", color)
             if u in node_map:
-                dot.edge(node_map[u][1], "End", label=label, style=style, color=color, fontsize="14")
+                dot.edge(node_map[u][1], "End", label=label, style=style, color=color, fontcolor=fontcolor, fontsize="14")
         elif u in node_map and v in node_map:
             # Sync handling: subtract end time of u from start time of v
             u_end = round(STN.nodes[u].get("latest_finish", 0), 2)
             v_start = round(STN.nodes[v].get("earliest_start", 0), 2) # ∞
             style = STN.edges[u, v].get("style", "solid")
-            color = STN.edges[u, v].get("color", "green")
+            color = STN.edges[u, v].get("color", "black")
             label = STN.edges[u, v].get("label", "[0, 0[")
+            fontcolor = STN.edges[u, v].get("labelcolor", color)
             duration = max(0.0, v_start - u_end)
             if label == "[0, 0[":
                 if duration > 0.0:
@@ -2289,7 +2310,7 @@ def draw_STN(STN, layout='dot', name = "Team View", impact_colors={}):
                 else:
                     label = "[0, ∞["
             # dot.edge(node_map[u][1], node_map[v][0], label=label, color="red", fontsize="14")
-            dot.edge(node_map[u][1], node_map[v][0], label=label, style=style, color=color, fontsize="14")
+            dot.edge(node_map[u][1], node_map[v][0], label=label, style=style, fontcolor=fontcolor, color=color, fontsize="14")
 
     # Render
     output_path = "/tmp/clustered_stn"
@@ -2468,8 +2489,8 @@ def plot_topological_multigraph(robassign, site_list, color_map, site_color_map)
     import networkx as nx
 
     G = nx.MultiDiGraph()
+    
     pos = regular_polygon_positions(site_list)
-
     # Color map for sites
     for site in pos:
         G.add_node(site, color=site_color_map.get(site, 'lightgrey'))
@@ -2485,12 +2506,19 @@ def plot_topological_multigraph(robassign, site_list, color_map, site_color_map)
             v = path[i + 1]
             G.add_edge(u, v, robots=robot, rad=0.1 + 0.05 * int(robot[-1]), color=colorsrob[idx])
 
-    fig, ax = plt.subplots(figsize=(10, 8))
+    fig, ax = plt.subplots(figsize=(12, 10))
+    plt.rcParams.update({
+        'font.size': 18,       # Adjust as needed
+        'font.weight': 'bold', # Make all fonts bold
+        'axes.labelweight': 'bold',
+        'axes.titleweight': 'bold',
+        'legend.title_fontsize': 18,  # optional
+    })
 
     for node, data in G.nodes(data=True):
         nx.draw_networkx_nodes(G, pos, nodelist=[node], node_size=1000, node_color=data['color'])
         label = node if node == "base" else node[-1]
-        nx.draw_networkx_labels(G, pos, labels={node: label})
+        nx.draw_networkx_labels(G, pos, labels={node: label},  font_size=16)
 
     for edge in G.edges(data=True):
         u, v = edge[0], edge[1]
@@ -2501,17 +2529,17 @@ def plot_topological_multigraph(robassign, site_list, color_map, site_color_map)
             edgelist=[(u, v)],
             edge_color=edge_color,
             arrowstyle='-|>',
-            arrowsize=20,
+            arrowsize=26,
             connectionstyle=f"arc3,rad={curvature}",
-            width=2
+            width=3.5
         )
 
     legend_handles = [
         plt.Line2D([0], [0], color=colorsrob[i], label=robots[i], linewidth=3)
         for i in range(len(robots))
     ]
-    plt.legend(handles=legend_handles, loc='best', fontsize=10)
-    plt.title("Topological representation of robot-site allocations", fontsize=12)
+    plt.legend(handles=legend_handles, loc='best', fontsize=16)
+    plt.title("Topological representation of robot-site allocations", fontsize=18)
     plt.axis('off')
     plt.tight_layout()
     plt.savefig("/tmp/Toporepresentation.pdf", format="pdf", bbox_inches="tight")
@@ -2521,21 +2549,28 @@ def plot_topological_multigraph(robassign, site_list, color_map, site_color_map)
 def plot_cluster_paths(team_paths, site_positions, site_color_map, team_colors, team_linestyles):
     import matplotlib.pyplot as plt
 
-    plt.figure(figsize=(11, 7))
+    plt.figure(figsize=(12, 10))
+    plt.rcParams.update({
+        'font.size': 16,       # Adjust as needed
+        'font.weight': 'bold', # Make all fonts bold
+        'axes.labelweight': 'bold',
+        'axes.titleweight': 'bold',
+        'legend.title_fontsize': 18,  # optional
+    })
 
     for team_name, data in team_paths.items():
         site_keys = [s.replace("site", "") if s != "base" else "base" for s in data["sites"]]
         coords = [site_positions[s] for s in site_keys]
         x, y = zip(*coords)
-        plt.plot(x, y, label=f"{team_name} - {len(data['robots'])} robots",
+        plt.plot(x, y, label=f"Path {team_name[-1]} - {len(data['robots'])} robots",
                  linestyle=team_linestyles.get(team_name, "solid"),
                  color=team_colors.get(team_name, "black"),
                  linewidth=2.5, marker="x")
 
     for site, pos in site_positions.items():
         color = site_color_map.get(site, "gray")
-        plt.scatter(*pos, s=400, color=color, edgecolors='black', zorder=5)
-        plt.text(pos[0], pos[1], site, fontsize=12, ha="center", va="center", zorder=6)
+        plt.scatter(*pos, s=700, color=color, edgecolors='black', zorder=5)
+        plt.text(pos[0], pos[1], site, fontsize=16, ha="center", va="center", zorder=6)
 
     plt.xlabel("Position on x axis (m)")
     plt.ylabel("Position on y axis (m)")
@@ -2553,7 +2588,14 @@ def plot_site_visits_over_time(visit_data, site_color_map, waiting_data=None):
     import matplotlib.pyplot as plt
     import matplotlib.patches as mpatches
 
-    fig, ax = plt.subplots(figsize=(14, 6))
+    fig, ax = plt.subplots(figsize=(15, 10))
+    plt.rcParams.update({
+        'font.size': 18,       # Adjust as needed
+        'font.weight': 'bold', # Make all fonts bold
+        'axes.labelweight': 'bold',
+        'axes.titleweight': 'bold',
+        'legend.title_fontsize': 18,  # optional
+    })
     height = 8
     ylabels = []
     yticks = []
@@ -2575,12 +2617,15 @@ def plot_site_visits_over_time(visit_data, site_color_map, waiting_data=None):
                                linestyles='dashed', linewidth=1.5)
 
     legend = [mpatches.Patch(color=c, label=f"site{l}") for l, c in site_color_map.items()]
-    legend.append(mpatches.Patch(facecolor='none', edgecolor='black', linestyle='--', label='Waiting time'))
+    legend.append(mpatches.Patch(facecolor='none', edgecolor='black', linestyle='--', label='Wait'))
     ax.legend(handles=legend)
     ax.set_yticks(yticks)
     ax.set_yticklabels(ylabels)
-    ax.set_xlabel("Time")
-    ax.set_title("Robot Site Visits Over Time")
+    ax.set_xlabel("Time", fontsize=18, fontweight='bold')
+    ax.set_title("Robot Site Visits Over Time", fontsize=22)
+    ax.tick_params(axis='both', labelsize=16)  # size only
+    for label in ax.get_xticklabels() + ax.get_yticklabels():
+        label.set_fontweight('bold')
     plt.xlim(0, 1500)
     plt.tight_layout()
     plt.savefig("/tmp/sitevistiovertime.pdf", format="pdf", bbox_inches="tight")

@@ -306,7 +306,7 @@ void STNController::triggerInitialExecutions() {
     }
 
 
-    // startTeamExecution("team_4");
+    startTeamExecution("team_0");
 
     for (const auto& team_name : initial_teams) {
         RCLCPP_INFO(this->get_logger(), "🚀 Starting execution for team: %s", team_name.c_str());

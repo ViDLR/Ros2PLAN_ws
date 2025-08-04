@@ -19,7 +19,7 @@ def export_networkx_stn(nx_graph):
     nodes = {}
     edges = []
     clusters = {}
-
+    
     for node, data in nx_graph.nodes(data=True):
         nodes[node] = data
         cluster = data.get("cluster")
@@ -78,22 +78,25 @@ import arms_utils.Class_and_functions as Class_and_functions  # Import ARMS Tool
 
 # (:requirements :strips :typing :fluents :negative-preconditions :timed-initial-literals :disjunctive-preconditions :durative-actions :universal-preconditions )
 
-def export_validation_files(path_idx, pathplan, subproblem_paths):
+
+def export_validation_files(path_idx, pathplan, subproblem_paths, base_dir_str=None):
     """
     Save all PDDL and plan files for validation, and write pathway.txt with the correct execution order.
+
+    If base_dir_str is not provided, defaults to /tmp/plan_output/subproblems/PATH_{id}
     """
+    if base_dir_str is None:
+        base_dir = Path("/tmp/plan_output/subproblems")
+    else:
+        base_dir = Path(base_dir_str) / "subproblems"
 
-    # print(f"📁 Exporting validation files for PATH_{path_idx}")
-    # print(f"    Pathplan files: {pathplan}")
-
-
-    validation_path = Path(f"/tmp/validation/subproblems/PATH_{path_idx}")
+    validation_path = base_dir / f"PATH_{path_idx}"
     validation_path.mkdir(parents=True, exist_ok=True)
 
     pathway_file = validation_path / "pathway.txt"
 
     with open(pathway_file, "w") as pf:
-        for i, plan_file in enumerate(pathplan):
+        for plan_file in pathplan:
             base = plan_file.replace("_PLAN.txt", "")
             pf.write(f"{os.path.basename(base)}\n")
 
@@ -117,10 +120,10 @@ def main():
     - Generates and solves planning problems
     - Merges plans correctly 
     """
-
+    t_alloc_full_0 = time.perf_counter()
     # Load mission
-    # mission = Class_and_functions.recover_mission_from_json("/tmp/world_info.json")
-    mission = Class_and_functions.getdataclassfrompddl(problem_file)
+    mission = Class_and_functions.recover_mission_from_json("/tmp/world_info.json")
+    # mission = Class_and_functions.getdataclassfrompddl(problem_file)
 
     # robot_states = {
     # r.name: {"site": "base", "position": "cpbase", "conf": "groundconf", "loc": mission.sites[0].center, "time": 0}
@@ -319,8 +322,6 @@ def main():
         for i, path_info in enumerate(new_unique_paths):
             print("rawpath {}: ".format(i),path_info['path'], "robots: ",path_info['robots'])
 
-        t_alloc_full_0 = time.perf_counter()
-
         # Following the robots assignements in the unique paths we can find the sequential links between paths
         sequential_links = Class_and_functions.find_sequential_links(new_unique_paths, mission) 
         print("sequential_links: ", sequential_links, "\n")
@@ -340,7 +341,7 @@ def main():
 
 
     
-    # DRAWING OF GRAPH FOR THE ARMS OUPUT
+    # # DRAWING OF GRAPH FOR THE ARMS OUPUT
     # allocations, site_positions, color_map = Class_and_functions.extract_inputs_from_mission(mission)
 
     # site_color_map = {
@@ -400,9 +401,6 @@ def main():
     # # === Call Plot 3: Site Visits Over Time ===
     # Class_and_functions.plot_site_visits_over_time(visit_data, site_color_map, waiting_data)
     # plt.show()
-
-    # Finally: build the STN using all extracted or computed inputs
-    
 
     # mergedplans = []
 
@@ -583,7 +581,7 @@ def main():
             # Save validation files
             # print(f"📦 Saving validation path for PATH_{path_idx}")
             subproblem_paths = [pf.replace("_PLAN.txt", ".pddl") for pf in pathplan]
-            export_validation_files(path_idx, pathplan, subproblem_paths)
+            export_validation_files(path_idx, pathplan, subproblem_paths, base_output_dir_str)
             # mergedplans.append(Path(merged_path_file))
 
             # Update STN with execution times
