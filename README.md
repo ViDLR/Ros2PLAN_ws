@@ -77,8 +77,8 @@ Feel free to open issues or request guidance for integration.
 
 ---
 
-## 👤 Author
+## Author
 
 **Virgile de La Rochefoucauld**  
 PhD Researcher — LAAS-CNRS & Osaka University  
-📧 virgile.dlr@protonmail.com  
+mail: virgile.dlr@protonmail.com  
