@@ -52,7 +52,7 @@ git clone https://github.com/ViDLR/Ros2PLAN_ws.git
 cd Ros2PLAN_ws
 rosdep update
 rosdep install --from-paths src --ignore-src -r -y
-colcon build --symlink-install
+colcon build
 source install/setup.bash
 ```
 Create a problem based on our domain in my_examples/plansys2_testexamples/pddl/) and constraints in the same folder.
