@@ -23,16 +23,17 @@ AMA enables multi-robot teams to coordinate asynchronously, recover from failure
 
 ## 📁 Repository Structure
 
+```
 Ros2PLAN_ws/
 ├── src/
-│ ├── arms_plan_solver/ # AMA plugin for PlanSys2 planner, contains pythons scripts and OPTIC binary executable(AMA-PLAN core)
-│ ├── ros2_planning_system/ # Forked PlanSys2 (as a Git submodule)
-│ ├── action_simulator/ # AMA-EXEC core: DEM, STNController, robot simulators
-│ ├── my_examples/ # Launch files, TLCM logic, PlanSys2 action definitions
-│ ├── optic_plan_solver/ # OPTIC-based temporal planner backend for early tests
-│ └── user_visualization_interface/ # WIP: interactive mission visualization tools
-├── testcases/  # Evaluation cases: failures, validation traces
+│   ├── arms_plan_solver/             # AMA plugin for PlanSys2 planner, contains Python scripts and OPTIC binary (AMA-PLAN core)
+│   ├── ros2_planning_system/         # Forked PlanSys2 core (as a Git submodule)
+│   ├── action_simulator/             # AMA-EXEC core: Distributed Execution Manager (DEM), STNController, robot simulators
+│   ├── my_examples/                  # Test launch files, TLCM node, and PlanSys2 action definitions
+│   ├── optic_plan_solver/            # OPTIC planner backend (legacy/experimental)
+│   └── user_visualization_interface/ # WIP visualization frontend (not yet integrated)
 └── README.md
+```
 
 ---
 
@@ -51,7 +52,7 @@ git clone https://github.com/ViDLR/Ros2PLAN_ws.git
 cd Ros2PLAN_ws
 rosdep update
 rosdep install --from-paths src --ignore-src -r -y
-colcon build --symlink-install
+colcon build
 source install/setup.bash
 ```
 Create a problem based on our domain in my_examples/plansys2_testexamples/pddl/) and constraints in the same folder.
@@ -65,3 +66,19 @@ This launch file:
   Launches the Distributed Execution Manager (DEM)
   Parses the symbolic plan, decomposes it using AMA-PLAN
   Triggers distributed execution with STN-based monitoring
+
+
+### Disclaimers 
+
+This repository contains an **ongoing development version** of the AMA system.  
+While the core architecture (AMA-PLAN and AMA-EXEC) is functional, some modules are still under active development.
+
+Feel free to open issues or request guidance for integration.
+
+---
+
+## Author
+
+**Virgile de La Rochefoucauld**  
+PhD Researcher — LAAS-CNRS & Osaka University  
+mail: virgile.dlr@protonmail.com  
