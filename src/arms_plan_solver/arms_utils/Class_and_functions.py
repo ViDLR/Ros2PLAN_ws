@@ -753,6 +753,7 @@ def GenerateAdaptedProblem(mission, previous_problem, robot_state, next_site, go
     
     # Get unique **starting sites** for all robots
     current_sites = {robot_state[r]["site"] for r in robot_state}
+    # print("inside robot state", robot_state)
     
 
     # Retrieve site objects from mission based on names
@@ -806,18 +807,18 @@ def GenerateAdaptedProblem(mission, previous_problem, robot_state, next_site, go
 
         # Process only relevant robot-related lines
         elif "robot" in line:
-            if any(robot in line for robot in robot_state.keys()):
+            if any(f"{robot} " in line for robot in robot_state.keys()) or any(f"{robot})" in line for robot in robot_state.keys()):
                 
                 modified = False  # Flag to track if we modified the line
                 
                 for robot in robot_state.keys():
-                    if 'at {}'.format(robot) in line:
+                    if 'at {})'.format(robot) in line or 'at {} '.format(robot) in line:
                         new_lines.append(f"( at {robot} {robot_state[robot]['position']} )\n")
                         modified = True
-                    elif 'at_site {}'.format(robot) in line:
+                    elif 'at_site {})'.format(robot) in line or 'at_site {} '.format(robot) in line:
                         new_lines.append(f"( at_site {robot} {robot_state[robot]['site']} )\n")
                         modified = True
-                    elif 'conf {}'.format(robot) in line:
+                    elif 'conf {})'.format(robot) in line or 'conf {} '.format(robot) in line:
                         new_lines.append(f"( {robot_state[robot]['conf']} {robot} )\n")
                         modified = True
                 

@@ -22,7 +22,7 @@
 #include "plansys2_domain_expert/DomainExpertNode.hpp"
 #include "plansys2_problem_expert/ProblemExpertNode.hpp"
 #include "plansys2_planner/PlannerNode.hpp"
-#include "action_simulator/ExecutionManagerNode.hpp"
+#include "action_simulator/DistributedExecutionManager.hpp"
 
 #include "plansys2_lifecycle_manager/lifecycle_manager.hpp"
 
@@ -35,14 +35,14 @@ int main(int argc, char ** argv)
 
   rclcpp::executors::MultiThreadedExecutor executor(rclcpp::ExecutorOptions(), 2);
 
-  auto execution_manager_node = std::make_shared<action_simulator::ExecutionManagerNode>();
+  auto execution_manager_node = std::make_shared<action_simulator::DistributedExecutionManager>();
   
   executor.add_node(execution_manager_node->get_node_base_interface());
 
 
   std::map<std::string, std::shared_ptr<plansys2::LifecycleServiceClient>> manager_nodes;
-  manager_nodes["execution_manager_node"] = std::make_shared<plansys2::LifecycleServiceClient>(
-    "execution_manager_node_lc_mngr", "execution_manager_node");
+  manager_nodes["distributed_execution_manager"] = std::make_shared<plansys2::LifecycleServiceClient>(
+    "distributed_execution_manager_lc_mngr", "distributed_execution_manager");
 
 
   for (auto & manager_node : manager_nodes) {
@@ -58,7 +58,7 @@ int main(int argc, char ** argv)
   if (!startup_future.get()) {
     RCLCPP_ERROR(
       rclcpp::get_logger("emn_bringup"),
-      "Failed to start Execution Manager Node!");
+      "Failed to start Distributed Execution Manager!");
     rclcpp::shutdown();
     return -1;
   }

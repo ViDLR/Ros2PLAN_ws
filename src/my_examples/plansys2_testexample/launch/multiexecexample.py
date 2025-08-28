@@ -112,12 +112,12 @@ def generate_launch_description():
     # )
 
 
-    execution_manager_node_cmd = TimerAction(
+    distributed_execution_manager_node_cmd = TimerAction(
         period=2.0,  # Delay of 5 seconds
         actions=[
             Node(
                 package='action_simulator',
-                executable='execution_manager_node',
+                executable='distributed_execution_manager',
                 output='screen',
                 parameters=[
                     {
@@ -148,5 +148,5 @@ def generate_launch_description():
     # Manager node
     ld.add_action(plansys2_core_bringup_cmd)
     ld.add_action(team_lifecycle_manager_node_cmd)
-    ld.add_action(execution_manager_node_cmd)
+    ld.add_action(distributed_execution_manager_node_cmd)
     return ld

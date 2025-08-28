@@ -1,5 +1,5 @@
-#ifndef EXECUTION_MANAGER_NODE_HPP_
-#define EXECUTION_MANAGER_NODE_HPP_
+#ifndef DISTRIBUTED_EXECUTION_MANAGER_HPP_
+#define DISTRIBUTED_EXECUTION_MANAGER_HPP_
 
 #include "rclcpp/rclcpp.hpp"
 #include "plansys2_msgs/msg/team.hpp"
@@ -29,12 +29,12 @@
 namespace action_simulator
 {
 
-class ExecutionManagerNode : public rclcpp::Node
+class DistributedExecutionManager : public rclcpp::Node
 {
 public:
-    ExecutionManagerNode();
+    DistributedExecutionManager();
     void ExecutionSequenceFunction(); 
-    ~ExecutionManagerNode();
+    ~DistributedExecutionManager();
 
 private:
     
@@ -80,4 +80,4 @@ private:
 
 }  // namespace action_simulator
 
-#endif  // EXECUTION_MANAGER_NODE_HPP_
+#endif  // DISTRIBUTED_EXECUTION_MANAGER_HPP_

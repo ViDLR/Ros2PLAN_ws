@@ -1,12 +1,12 @@
 #include <memory>
 
-#include "action_simulator/ExecutionManagerNode.hpp"
+#include "action_simulator/DistributedExecutionManager.hpp"
 #include "rclcpp/rclcpp.hpp"
 
 int main(int argc, char **argv)
 {
     rclcpp::init(argc, argv);
-    auto node = std::make_shared<action_simulator::ExecutionManagerNode>();
+    auto node = std::make_shared<action_simulator::DistributedExecutionManager>();
     rclcpp::spin(node);
     rclcpp::shutdown();
     return 0;

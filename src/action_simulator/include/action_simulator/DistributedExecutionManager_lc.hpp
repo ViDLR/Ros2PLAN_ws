@@ -1,5 +1,5 @@
-#ifndef EXECUTION_MANAGER_NODE_HPP_
-#define EXECUTION_MANAGER_NODE_HPP_
+#ifndef DISTRIBUTED_EXECUTION_MANAGER_HPP_
+#define DISTRIBUTED_EXECUTION_MANAGER_HPP_
 
 #include "rclcpp_lifecycle/lifecycle_node.hpp"
 #include "plansys2_msgs/msg/action_execution.hpp"
@@ -30,10 +30,10 @@
 namespace action_simulator
 {
 
-class ExecutionManagerNode : public rclcpp_lifecycle::LifecycleNode
+class DistributedExecutionManager : public rclcpp_lifecycle::LifecycleNode
 {
 public:
-  ExecutionManagerNode();
+  DistributedExecutionManager();
 
   using CallbackReturnT =
     rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn;
@@ -80,4 +80,4 @@ private:
 
 }  // namespace action_simulator
 
-#endif  // EXECUTION_MANAGER_NODE_HPP_
+#endif  // DISTRIBUTED_EXECUTION_MANAGER_HPP_

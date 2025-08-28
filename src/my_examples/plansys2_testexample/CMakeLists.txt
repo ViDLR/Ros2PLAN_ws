@@ -69,8 +69,8 @@ endforeach()
 add_executable(plansys2_core_bringup src/plansys2_core_bringup.cpp)
 ament_target_dependencies(plansys2_core_bringup ${dependencies})
 
-add_executable(emn_bringup src/emn_bringup.cpp)
-ament_target_dependencies(emn_bringup ${dependencies})
+add_executable(dem_bringup src/dem_bringup.cpp)
+ament_target_dependencies(dem_bringup ${dependencies})
 
 add_executable(team_lifecycle_manager_node src/team_lifecycle_manager_node.cpp)
 ament_target_dependencies(team_lifecycle_manager_node ${dependencies})
@@ -90,7 +90,7 @@ install(TARGETS
   action_nodes
   team_lifecycle_manager_node
   plansys2_core_bringup
-  emn_bringup
+  dem_bringup
   ARCHIVE DESTINATION lib
   LIBRARY DESTINATION lib
   RUNTIME DESTINATION lib/${PROJECT_NAME}

@@ -1,21 +1,21 @@
-#include "action_simulator/ExecutionManagerNode.hpp"
+#include "action_simulator/DistributedExecutionManager.hpp"
 
 namespace action_simulator {
 
 using namespace std::chrono_literals;
 using StartTeams = plansys2_msgs::srv::StartTeams;
 
-ExecutionManagerNode::ExecutionManagerNode() : rclcpp::Node("execution_manager_node")
+DistributedExecutionManager::DistributedExecutionManager() : rclcpp::Node("distributed_execution_manager")
 {
-    RCLCPP_INFO(this->get_logger(), "Creating ExecutionManagerNode...");
+    RCLCPP_INFO(this->get_logger(), "Creating DistributedExecutionManager...");
     world_info_publisher_ = this->create_publisher<plansys2_msgs::msg::WorldInfo>("/world_info", 10);
     execution_status_sub_ = this->create_subscription<std_msgs::msg::String>(
         "/stn_execution_status", 10,
-        std::bind(&ExecutionManagerNode::executionStatusCallback, this, std::placeholders::_1));
+        std::bind(&DistributedExecutionManager::executionStatusCallback, this, std::placeholders::_1));
     ExecutionSequenceFunction();
 }
 
-ExecutionManagerNode::~ExecutionManagerNode() {
+DistributedExecutionManager::~DistributedExecutionManager() {
     if (executor_) {
         RCLCPP_INFO(this->get_logger(), "Shutting down MultiThreadedExecutor...");
         executor_->cancel();
@@ -27,7 +27,7 @@ ExecutionManagerNode::~ExecutionManagerNode() {
     }
 }
 
-void ExecutionManagerNode::executionStatusCallback(
+void DistributedExecutionManager::executionStatusCallback(
     const std_msgs::msg::String::SharedPtr msg)
 {
     const std::string& status = msg->data;
@@ -73,7 +73,7 @@ void ExecutionManagerNode::executionStatusCallback(
 }
 
 
-std::map<std::string, std::string> ExecutionManagerNode::parseFailureStatus(const std::string& msg)
+std::map<std::string, std::string> DistributedExecutionManager::parseFailureStatus(const std::string& msg)
 {
     std::map<std::string, std::string> result;
 
@@ -95,7 +95,7 @@ std::map<std::string, std::string> ExecutionManagerNode::parseFailureStatus(cons
 }
 
 
-void ExecutionManagerNode::applyFailureToProblem(const std::map<std::string, std::string>& failure_data)
+void DistributedExecutionManager::applyFailureToProblem(const std::map<std::string, std::string>& failure_data)
 {
     using json = nlohmann::json;
 
@@ -186,7 +186,7 @@ void ExecutionManagerNode::applyFailureToProblem(const std::map<std::string, std
 }
 
 
-void ExecutionManagerNode::publish_world_info(const std::string &file_path) 
+void DistributedExecutionManager::publish_world_info(const std::string &file_path) 
 {
         RCLCPP_INFO(this->get_logger(), "Loading WorldInfo from JSON file: %s", file_path.c_str());
 
@@ -247,7 +247,7 @@ void ExecutionManagerNode::publish_world_info(const std::string &file_path)
 
 
 
-void ExecutionManagerNode::load_and_save_world_info(const std::string &problem_info_path) 
+void DistributedExecutionManager::load_and_save_world_info(const std::string &problem_info_path) 
 {
     RCLCPP_INFO(this->get_logger(), "Loading WorldInfo from JSON file: %s", problem_info_path.c_str());
 
@@ -285,7 +285,7 @@ void ExecutionManagerNode::load_and_save_world_info(const std::string &problem_i
     tmp_file.close();
 
 }
-void ExecutionManagerNode::parseArmsResult(
+void DistributedExecutionManager::parseArmsResult(
     const std::string &file_path,
     const std::map<std::string, plansys2_msgs::msg::Plan> &labeled_plans)
 {
@@ -394,7 +394,7 @@ void ExecutionManagerNode::parseArmsResult(
 
 
 // ✅ **Fix: Add `splitString` Implementation**
-std::vector<std::string> ExecutionManagerNode::splitString(const std::string &input, char delimiter) {
+std::vector<std::string> DistributedExecutionManager::splitString(const std::string &input, char delimiter) {
     std::vector<std::string> result;
     std::stringstream ss(input);
     std::string item;
@@ -409,7 +409,7 @@ std::vector<std::string> ExecutionManagerNode::splitString(const std::string &in
     return result;
 }
 
-void ExecutionManagerNode::handleFailure(const std::string& team_name) {
+void DistributedExecutionManager::handleFailure(const std::string& team_name) {
     RCLCPP_WARN(this->get_logger(), "Handling failure for team '%s'.", team_name.c_str());
 
     validateFailureImpact(team_name);
@@ -420,7 +420,7 @@ void ExecutionManagerNode::handleFailure(const std::string& team_name) {
         stn_controller_->startTeamExecution(team_name);
     }
 }
-void ExecutionManagerNode::validateFailureImpact(const std::string& team_name) {
+void DistributedExecutionManager::validateFailureImpact(const std::string& team_name) {
     std::string package_prefix = ament_index_cpp::get_package_prefix("action_simulator");
     std::filesystem::path validator_path = std::filesystem::path(package_prefix) / "lib/action_simulator/external_validator/val-pddl";
     
@@ -462,7 +462,7 @@ void ExecutionManagerNode::validateFailureImpact(const std::string& team_name) {
 }
 
 
-ExecutionManagerNode::ValResult ExecutionManagerNode::parse_val_output(const std::string &file_path) {
+DistributedExecutionManager::ValResult DistributedExecutionManager::parse_val_output(const std::string &file_path) {
     ValResult result;
     result.status = "UNKNOWN";
     result.value = -1;
@@ -487,7 +487,7 @@ ExecutionManagerNode::ValResult ExecutionManagerNode::parse_val_output(const std
     return result;
 }
 
-// void ExecutionManagerNode::startPlanExecution() {
+// void DistributedExecutionManager::startPlanExecution() {
 //     for (const auto &team : active_teams) {
 //         if (!executor_clients_.count(team.name)) {
 //             RCLCPP_WARN(this->get_logger(), "No executor client for '%s'.", team.name.c_str());
@@ -512,7 +512,7 @@ ExecutionManagerNode::ValResult ExecutionManagerNode::parse_val_output(const std
 //     }
 // }
 
-void ExecutionManagerNode::load_and_save_failure_index(const std::string &src_path) {
+void DistributedExecutionManager::load_and_save_failure_index(const std::string &src_path) {
     RCLCPP_INFO(this->get_logger(), "Loading failure index from: %s", src_path.c_str());
 
     std::ifstream file(src_path);
@@ -547,7 +547,7 @@ void ExecutionManagerNode::load_and_save_failure_index(const std::string &src_pa
     tmp_file.close();
 }
 
-void ExecutionManagerNode::ExecutionSequenceFunction()
+void DistributedExecutionManager::ExecutionSequenceFunction()
 {
     RCLCPP_INFO(this->get_logger(), "Starting ExecutionSequenceFunction ...");
 
@@ -625,7 +625,7 @@ void ExecutionManagerNode::ExecutionSequenceFunction()
     publish_world_info("src/my_examples/plansys2_testexample/pddl/world_info.json");    
     stn_controller_->triggerInitialExecutions();
 
-    RCLCPP_INFO(this->get_logger(), "ExecutionManagerNode is running ESF logic after spinning...");
+    RCLCPP_INFO(this->get_logger(), "DistributedExecutionManager is running ESF logic after spinning...");
     // // Notify that STN is in control
     // RCLCPP_INFO(this->get_logger(), "STN Initialized. Monitoring execution...");
 

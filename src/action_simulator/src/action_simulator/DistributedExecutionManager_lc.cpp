@@ -1,4 +1,4 @@
-#include "action_simulator/ExecutionManagerNode.hpp"
+#include "action_simulator/DistributedExecutionManager.hpp"
 
 namespace action_simulator {
 
@@ -6,7 +6,7 @@ using namespace std::chrono_literals;
 using StartTeams = plansys2_msgs::srv::StartTeams;
 using StopTeams = plansys2_msgs::srv::StopTeams;
 
-ExecutionManagerNode::ExecutionManagerNode(): rclcpp_lifecycle::LifecycleNode("execution_manager_node") {}
+DistributedExecutionManager::DistributedExecutionManager(): rclcpp_lifecycle::LifecycleNode("distributed_execution_manager") {}
 
 
 using CallbackReturnT =
@@ -14,9 +14,9 @@ using CallbackReturnT =
 
 
 CallbackReturnT
-ExecutionManagerNode::on_configure(const rclcpp_lifecycle::State &)
+DistributedExecutionManager::on_configure(const rclcpp_lifecycle::State &)
 {
-    RCLCPP_INFO(this->get_logger(), "Configuring ExecutionManagerNode...");
+    RCLCPP_INFO(this->get_logger(), "Configuring DistributedExecutionManager...");
 
     // Initialize clients
     domain_client_ = std::make_shared<plansys2::DomainExpertClient>();
@@ -36,14 +36,14 @@ ExecutionManagerNode::on_configure(const rclcpp_lifecycle::State &)
 
     problem_client_->addProblem(problem_str);
 
-    RCLCPP_INFO(this->get_logger(), "ExecutionManagerNode configured successfully.");
+    RCLCPP_INFO(this->get_logger(), "DistributedExecutionManager configured successfully.");
     return CallbackReturn::SUCCESS;
 }
 
 
-CallbackReturnT ExecutionManagerNode::on_activate(const rclcpp_lifecycle::State & )
+CallbackReturnT DistributedExecutionManager::on_activate(const rclcpp_lifecycle::State & )
 {
-    RCLCPP_INFO(this->get_logger(), "Activating ExecutionManagerNode...");
+    RCLCPP_INFO(this->get_logger(), "Activating DistributedExecutionManager...");
     
     // Fetch and analyze plan
     auto domain = domain_client_->getDomain();
@@ -103,23 +103,23 @@ CallbackReturnT ExecutionManagerNode::on_activate(const rclcpp_lifecycle::State 
 
 
 CallbackReturnT
-ExecutionManagerNode::on_deactivate(const rclcpp_lifecycle::State & )
+DistributedExecutionManager::on_deactivate(const rclcpp_lifecycle::State & )
 {
-    RCLCPP_INFO(this->get_logger(), "Deactivating ExecutionManagerNode...");
+    RCLCPP_INFO(this->get_logger(), "Deactivating DistributedExecutionManager...");
     // stop_executors_and_robots();
     return CallbackReturn::SUCCESS;
 }
 
 CallbackReturnT
-ExecutionManagerNode::on_shutdown(const rclcpp_lifecycle::State & )
+DistributedExecutionManager::on_shutdown(const rclcpp_lifecycle::State & )
 {
-    RCLCPP_INFO(this->get_logger(), "Shutting down ExecutionManagerNode...");
+    RCLCPP_INFO(this->get_logger(), "Shutting down DistributedExecutionManager...");
     // stop_executors_and_robots();
     // cleanup_resources();
     return CallbackReturn::SUCCESS;
 }
 
-// void ExecutionManagerNode::wait_for_clients()
+// void DistributedExecutionManager::wait_for_clients()
 // {
 //     const std::chrono::seconds timeout(10);
 
@@ -128,7 +128,7 @@ ExecutionManagerNode::on_shutdown(const rclcpp_lifecycle::State & )
 //     wait_for_service_and_activation("planner/get_state", "planner", timeout);
 // }
 
-// void ExecutionManagerNode::wait_for_service_and_activation(
+// void DistributedExecutionManager::wait_for_service_and_activation(
 //     const std::string &service_name, 
 //     const std::string &node_name,
 //     std::chrono::seconds timeout)
@@ -160,7 +160,7 @@ ExecutionManagerNode::on_shutdown(const rclcpp_lifecycle::State & )
 //     }
 // }
 
-void ExecutionManagerNode::setup_knowledge(const std::string &file_path)
+void DistributedExecutionManager::setup_knowledge(const std::string &file_path)
 {
     RCLCPP_INFO(this->get_logger(), "Loading knowledge from file: %s", file_path.c_str());
 
@@ -215,7 +215,7 @@ void ExecutionManagerNode::setup_knowledge(const std::string &file_path)
 }
 
 
-void ExecutionManagerNode::start_execution()
+void DistributedExecutionManager::start_execution()
 {
   auto domain = domain_client_->getDomain();
   auto problem = problem_client_->getProblem();
@@ -233,7 +233,7 @@ void ExecutionManagerNode::start_execution()
 //   create_and_launch_teams();
 }
 
-// void ExecutionManagerNode::create_and_launch_teams()
+// void DistributedExecutionManager::create_and_launch_teams()
 // {
 //   RCLCPP_INFO(this->get_logger(), "Simulating team creation and launching robots...");
 //   // Add logic here for team creation based on analysis
@@ -244,7 +244,7 @@ void ExecutionManagerNode::start_execution()
 //   // };
 // }
 
-// void ExecutionManagerNode::stop_executors_and_robots()
+// void DistributedExecutionManager::stop_executors_and_robots()
 // {
 //   {
 //     std::lock_guard<std::mutex> lock(thread_control_mutex_);
@@ -264,7 +264,7 @@ void ExecutionManagerNode::start_execution()
 //   RCLCPP_INFO(this->get_logger(), "All executors and robots stopped successfully.");
 // }
 
-// void ExecutionManagerNode::cleanup_resources()
+// void DistributedExecutionManager::cleanup_resources()
 // {
 //   RCLCPP_INFO(this->get_logger(), "Cleaning up resources...");
 //   domain_expert_.reset();
@@ -275,7 +275,7 @@ void ExecutionManagerNode::start_execution()
 //   // stop_executors_and_robots();
 // }
 
-// void ExecutionManagerNode::actions_hub_callback(const plansys2_msgs::msg::ActionExecution::SharedPtr msg)
+// void DistributedExecutionManager::actions_hub_callback(const plansys2_msgs::msg::ActionExecution::SharedPtr msg)
 // {
 //   RCLCPP_INFO(this->get_logger(), "Received action status: %s", msg->status.c_str());
 // }
@@ -283,4 +283,4 @@ void ExecutionManagerNode::start_execution()
 }  // namespace action_simulator
 
 
-// RCLCPP_COMPONENTS_REGISTER_NODE(action_simulator::ExecutionManagerNode)
+// RCLCPP_COMPONENTS_REGISTER_NODE(action_simulator::DistributedExecutionManager)

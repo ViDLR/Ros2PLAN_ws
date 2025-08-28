@@ -54,15 +54,18 @@ problem_file = sys.argv[2]
 min_nb_cluster = int(sys.argv[3])
 validation_report_path = sys.argv[4] if len(sys.argv) > 4 else "" 
 # Optional output override
+# print(sys.argv)
 if len(sys.argv) > 5 and sys.argv[5]:
     base_output_dir = Path(sys.argv[5])
 else:
     base_output_dir = Path("/tmp/plan_output/")
 
+
 base_output_dir_str = str(base_output_dir)
 
 # Define the output paths dynamically
 subproblems_dir = base_output_dir / "subproblems"
+
 script_dir = os.path.dirname(__file__)  # Get the directory where the script is located
 parent_dir = os.path.dirname(script_dir)  # Navigate to the parent directory if needed
 external_solver_dir = os.path.join(get_package_prefix("arms_plan_solver"), "lib", "arms_plan_solver", "external_solver")
@@ -71,6 +74,10 @@ sys.path.append(parent_dir)  # Add the parent directory to sys.path
 sys.path.append(script_dir + "/functions")
 # Ensure the directories exist
 subproblems_dir.mkdir(parents=True, exist_ok=True)
+
+# print(base_output_dir_str)
+# print(base_output_dir)
+# print(subproblems_dir)
 
 import arms_utils.Class_and_functions as Class_and_functions  # Import ARMS Toolbox functions  # Import ARMS Toolbox functions
 
@@ -147,9 +154,7 @@ def main():
             robots = copy.deepcopy(mission.robots)
 
             t_alloc_full_0 = time.perf_counter()
-
             clusters, allocationscenario = Class_and_functions.getbestassignfrommission(mission=mission, minnbofcluster=1)
-
 
             # Build robot-to-path mapping from updated mission
             robotpath = defaultdict(list)
@@ -405,9 +410,8 @@ def main():
     # mergedplans = []
 
     # print("THE ROBOT STATES", robot_states, "\n")
-    
 
-    # Class_and_functions.draw_STN(stn)
+    Class_and_functions.draw_STN(stn)
 
     t_STN_0 = time.perf_counter()
     
@@ -548,6 +552,7 @@ def main():
                     goal_type = "solving"
                 # Generate problem
                 prblm_path = Class_and_functions.GenerateAdaptedProblem(mission, problem_file, robot_state, path[i], goal_type)
+                # print("\n",prblm_path)
                 # Solve the problem
                 try:
                     Planner_command = "timeout -v 1m {2} -N {0} {1}.pddl".format(domain_file, prblm_path, optic_cplex_path)
@@ -560,6 +565,7 @@ def main():
 
                     # Execute the combined command
                     subprocess.run(command, shell=True)
+                    # print("\n",command)
                     Class_and_functions.trim_plan_file("{0}_PLAN.txt".format(prblm_path))
                 except IndexError:
                     print("INDEX ERROR")
@@ -574,8 +580,9 @@ def main():
                 # print("max_execution_time",max_execution_time, "\n")
 
             # print("THE ROBOT STATES", robot_states, "\n")
-
+           
             merged_path_file = f"{subproblems_dir}/PATH_{path_idx}_mergedPLAN.txt"
+            # print("\n",merged_path_file)
             # print(pathplan, merged_path_file, path)
             Class_and_functions.merge_for_single_path(pathplan, merged_path_file, domain_file, Path(problem_file))
             # Save validation files
@@ -671,7 +678,7 @@ def main():
     
     # print(export_networkx_stn(stn))
     # Class_and_functions.draw_STN(stn, impact_colors={"0":"lightcoral", "sync_0_a":"coral", "3":"coral"})
-    # Class_and_functions.draw_STN(stn)
+    Class_and_functions.draw_STN(stn)
     t_STN_1 = time.perf_counter()
     print("STN creation and PDDL solving time:", t_STN_1-t_STN_0)
     

@@ -2,7 +2,7 @@
 <package format="3">
   <name>action_simulator</name>
   <version>0.0.1</version>
-  <description>Action simulator for plansys2</description>
+  <description>Action simulator AMA</description>
   <maintainer email="virgile.dlr@protonmail.com">virgile</maintainer>
   <license>Apache License 2.0</license>
 

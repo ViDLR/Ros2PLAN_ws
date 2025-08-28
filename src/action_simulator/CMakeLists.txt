@@ -40,23 +40,22 @@ include_directories(include)
 
 # Source files
 set(SOURCES
-  src/action_simulator/ExecutionManagerNode.cpp
+  src/action_simulator/DistributedExecutionManager.cpp
   src/action_simulator_node.cpp
   src/action_simulator/STNControllerNode.cpp
 )
-
 # Create shared library
 add_library(${PROJECT_NAME} SHARED ${SOURCES})
 ament_target_dependencies(${PROJECT_NAME} ${dependencies})
 target_compile_definitions(${PROJECT_NAME} PUBLIC "PLUGINLIB__DISABLE_BOOST_FUNCTIONS")
 
 # Create executable nodes
-add_executable(execution_manager_node src/execution_manager_node.cpp)
-ament_target_dependencies(execution_manager_node ${dependencies})
-target_compile_definitions(execution_manager_node PUBLIC "PLUGINLIB__DISABLE_BOOST_FUNCTIONS")
-target_link_libraries(execution_manager_node ${PROJECT_NAME})
+add_executable(distributed_execution_manager src/distributed_execution_manager.cpp)
+ament_target_dependencies(distributed_execution_manager ${dependencies})
+target_compile_definitions(distributed_execution_manager PUBLIC "PLUGINLIB__DISABLE_BOOST_FUNCTIONS")
+target_link_libraries(distributed_execution_manager ${PROJECT_NAME})
 
-# rclcpp_components_register_node(${PROJECT_NAME} PLUGIN "action_simulator::ExecutionManagerNode" EXECUTABLE execution_manager_node)
+# rclcpp_components_register_node(${PROJECT_NAME} PLUGIN "action_simulator::DistributedExecutionManager" EXECUTABLE execution_manager_node)
 # Install headers
 install(DIRECTORY include/
   DESTINATION include/
@@ -82,7 +81,7 @@ install(
 # Install library and executables
 install(TARGETS
   ${PROJECT_NAME}
-  execution_manager_node
+  distributed_execution_manager
   ARCHIVE DESTINATION lib
   LIBRARY DESTINATION lib
   RUNTIME DESTINATION lib/${PROJECT_NAME}
